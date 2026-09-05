@@ -4,20 +4,15 @@ import (
 	"context"
 	"strings"
 
+	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/config"
 	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/model"
 	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/render"
 )
 
 func (a *App) handleNavigationTouch(_ context.Context, x, _ int, width int) bool {
-	if width <= 0 {
-		return false
-	}
-	index := x * 3 / width
+	index := navigationIndex(x, width)
 	if index < 0 {
-		index = 0
-	}
-	if index > 2 {
-		index = 2
+		return false
 	}
 	switch index {
 	case 0:
@@ -28,6 +23,20 @@ func (a *App) handleNavigationTouch(_ context.Context, x, _ int, width int) bool
 		a.openSettings()
 	}
 	return false
+}
+
+func navigationIndex(x, width int) int {
+	if width <= 0 {
+		return -1
+	}
+	index := x * 3 / width
+	if index < 0 {
+		return 0
+	}
+	if index > 2 {
+		return 2
+	}
+	return index
 }
 
 func (a *App) navigatePage(pageID string) {
@@ -132,6 +141,7 @@ func settingsDocument(width, height int) *model.Document {
 		Pages: []model.Page{{ID: "settings", Name: "Settings", Elements: []model.Element{
 			{ID: "settings-title", Type: "text", Frame: model.Frame{X: 30, Y: 72, Width: float64(width - 60), Height: 54}, Style: model.Style{Color: "#111111", FontSize: 26, Align: "center"}, Text: "设置"},
 			{ID: "settings-hint", Type: "text", Frame: model.Frame{X: 30, Y: 142, Width: float64(width - 60), Height: 44}, Style: model.Style{Color: "#555555", FontSize: 16, Align: "center"}, Text: "管理界面连接与程序"},
+			{ID: "settings-version", Type: "text", Frame: model.Frame{X: 30, Y: 194, Width: float64(width - 60), Height: 30}, Style: model.Style{Color: "#777777", FontSize: 14, Align: "center"}, Text: "Kindle Dashboard v" + config.Version},
 			{ID: "settings-refresh", Type: "button", Frame: model.Frame{X: 36, Y: float64(contentHeight/2 - 62), Width: float64(buttonWidth), Height: 72}, Style: model.Style{Color: "#ffffff", Fill: "#111111", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 20, Align: "center"}, Text: "刷新配置", Action: &model.Action{Type: "refresh_config"}},
 			{ID: "settings-exit", Type: "button", Frame: model.Frame{X: 36, Y: float64(contentHeight/2 + 30), Width: float64(buttonWidth), Height: 72}, Style: model.Style{Color: "#111111", Fill: "#ffffff", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 20, Align: "center"}, Text: "退出 Dashboard", Action: &model.Action{Type: "exit"}},
 		}}},

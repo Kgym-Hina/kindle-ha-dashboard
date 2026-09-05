@@ -7,6 +7,19 @@ interface HAState {
   attributes: Record<string, unknown>;
 }
 
+interface HAArea {
+  area_id: string;
+  name: string;
+}
+
+interface HAWebSocketMessage {
+  type?: string;
+  id?: number;
+  success?: boolean;
+  result?: unknown;
+  error?: unknown;
+}
+
 export class HomeAssistantClient {
   async status(): Promise<{ configured: boolean; baseUrl: string; authMode: "supervisor" | "token" | "missing"; reachable: boolean }> {
     const settings = await readSettings();
@@ -24,16 +37,15 @@ export class HomeAssistantClient {
   }
 
   async listZones(): Promise<ZoneInfo[]> {
-    const states = await this.getStates();
-    return states
-      .filter((state) => state.entity_id.startsWith("zone."))
-      .map((state) => ({
-        entity_id: state.entity_id,
-        zone_id: state.entity_id.slice("zone.".length),
-        name: stringValue(state.attributes.friendly_name) || state.entity_id.slice("zone.".length),
-        state: state.state
+    const areas = await this.listAreas();
+    return areas
+      .map((area) => ({
+        entity_id: `area.${area.area_id}`,
+        zone_id: area.area_id,
+        name: area.name || area.area_id,
+        state: ""
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
   }
 
   async listEntities(): Promise<EntitySummary[]> {
@@ -103,6 +115,72 @@ export class HomeAssistantClient {
     return Array.isArray(states) ? states as HAState[] : [];
   }
 
+  private async listAreas(): Promise<HAArea[]> {
+    const settings = await readSettings();
+    const baseUrl = resolveBaseUrl(settings.ha_url);
+    const token = resolveToken(settings.ha_token);
+    if (!token) throw new Error("Home Assistant token is not configured");
+    const websocketUrl = toWebSocketUrl(`${baseUrl}/api/websocket`);
+    const commandId = 1;
+    return new Promise<HAArea[]>((resolve, reject) => {
+      const socket = new WebSocket(websocketUrl);
+      let settled = false;
+      const timeout = setTimeout(() => finish(new Error("Home Assistant area request timed out")), 8000);
+      const finish = (error?: Error, areas: HAArea[] = []) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        try { socket.close(); } catch { /* socket may already be closed */ }
+        if (error) reject(error);
+        else resolve(areas);
+      };
+      const send = (message: Record<string, unknown>) => socket.send(JSON.stringify(message));
+      socket.addEventListener("message", (event) => {
+        let message: HAWebSocketMessage;
+        try {
+          message = JSON.parse(String(event.data)) as HAWebSocketMessage;
+        } catch {
+          finish(new Error("Home Assistant returned an invalid WebSocket message"));
+          return;
+        }
+        if (message.type === "auth_required") {
+          try {
+            send({ type: "auth", access_token: token });
+          } catch {
+            finish(new Error("Home Assistant WebSocket authentication could not be sent"));
+          }
+          return;
+        }
+        if (message.type === "auth_invalid") {
+          finish(new Error("Home Assistant WebSocket authentication failed"));
+          return;
+        }
+        if (message.type === "auth_ok") {
+          try {
+            send({ id: commandId, type: "config/area_registry/list" });
+          } catch {
+            finish(new Error("Home Assistant area request could not be sent"));
+          }
+          return;
+        }
+        if (message.type !== "result" || message.id !== commandId) return;
+        if (!message.success) {
+          finish(new Error(`Home Assistant area request failed: ${JSON.stringify(message.error)}`));
+          return;
+        }
+        const areas = Array.isArray(message.result) ? message.result.filter(isArea) : [];
+        finish(undefined, areas);
+      });
+      socket.addEventListener("error", () => finish(new Error("Home Assistant WebSocket connection failed")));
+      socket.addEventListener("close", () => {
+        if (!settled) finish(new Error("Home Assistant WebSocket closed before returning areas"));
+      });
+      socket.addEventListener("open", () => {
+        // Home Assistant sends auth_required after the connection opens.
+      });
+    });
+  }
+
   private async request(path: string, init: RequestInit): Promise<Response> {
     const settings = await readSettings();
     const token = resolveToken(settings.ha_token);
@@ -132,12 +210,20 @@ function resolveToken(configuredToken?: string): string | undefined {
   return configuredToken?.trim() || process.env.HA_TOKEN?.trim() || process.env.SUPERVISOR_TOKEN?.trim() || undefined;
 }
 
+function toWebSocketUrl(value: string): string {
+  return value.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:");
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
 function isObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isArea(value: unknown): value is HAArea {
+  return isObject(value) && typeof value.area_id === "string" && value.area_id.trim().length > 0 && typeof value.name === "string";
 }
 
 function slug(value: string): string {

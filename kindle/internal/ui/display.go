@@ -20,7 +20,47 @@ type Display struct {
 	Height  int
 }
 
-func (d Display) Show(canvas image.Image) error {
+func (d Display) Clear() error {
+	var lastErr error
+	for _, candidate := range []string{"/usr/bin/fbink", "/usr/sbin/fbink", "/mnt/us/linkss/bin/fbink", "fbink"} {
+		if candidate != "fbink" {
+			if _, err := os.Stat(candidate); err != nil {
+				continue
+			}
+		}
+		for _, args := range [][]string{
+			{"-q", "-f", "-k"},
+			{"-q", "-c", "-f"},
+			{"-q", "-k"},
+		} {
+			if err := exec.Command(candidate, args...).Run(); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		}
+	}
+	for _, candidate := range []string{"/usr/sbin/eips", "/usr/bin/eips", "eips"} {
+		if candidate != "eips" {
+			if _, err := os.Stat(candidate); err != nil {
+				continue
+			}
+		}
+		for _, args := range [][]string{{"-f", "-c"}, {"-c"}} {
+			if err := exec.Command(candidate, args...).Run(); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no framebuffer clear command found")
+	}
+	return lastErr
+}
+
+func (d Display) Show(canvas image.Image, force bool) error {
 	if canvas == nil {
 		return errors.New("display canvas is nil")
 	}
@@ -50,7 +90,7 @@ func (d Display) Show(canvas image.Image) error {
 		_ = os.Remove(temporary)
 		return err
 	}
-	if err := showImage(temporary, width, height); err != nil {
+	if err := showImage(temporary, width, height, force); err != nil {
 		_ = os.Remove(temporary)
 		return err
 	}
@@ -58,7 +98,7 @@ func (d Display) Show(canvas image.Image) error {
 	return nil
 }
 
-func showImage(path string, width, height int) error {
+func showImage(path string, width, height int, force bool) error {
 	imageSpec := fmt.Sprintf("file=%s,x=0,y=0,w=%d,h=%d", path, width, height)
 	for _, candidate := range []string{"/usr/bin/fbink", "/usr/sbin/fbink", "/mnt/us/linkss/bin/fbink", "fbink"} {
 		if candidate != "fbink" {
@@ -66,11 +106,22 @@ func showImage(path string, width, height int) error {
 				continue
 			}
 		}
-		for _, args := range [][]string{
+		argsList := [][]string{
+			{"-q", "-V", "-W", "GC16_FAST", "-g", imageSpec},
+			{"-q", "-V", "-W", "GL16_FAST", "-g", imageSpec},
+			{"-q", "-V", "-W", "DU4", "-g", imageSpec},
 			{"-q", "-c", "-f", "-V", "-g", imageSpec},
 			{"-q", "-c", "-f", "-g", imageSpec},
 			{"-q", "-c", "-f", "-i", path},
-		} {
+		}
+		if force {
+			argsList = [][]string{
+				{"-q", "-c", "-f", "-V", "-g", imageSpec},
+				{"-q", "-c", "-f", "-g", imageSpec},
+				{"-q", "-c", "-f", "-i", path},
+			}
+		}
+		for _, args := range argsList {
 			if err := exec.Command(candidate, args...).Run(); err == nil {
 				return nil
 			}

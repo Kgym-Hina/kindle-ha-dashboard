@@ -29,7 +29,9 @@
 1. 将本目录作为本地 Add-on 仓库，或把 `ha-addon/` 复制到 Home Assistant 的 Add-on 仓库。
 2. 在 Add-on 配置中填写 `ha_url`；如果 Add-on 运行在 Home Assistant Supervisor 内，优先使用自动注入的 `SUPERVISOR_TOKEN`。
 3. 安装并启动后，从 Add-on 页面打开编辑器。
-4. 在编辑器中选择 `portable` 或 HA 的某个 `zone`，拖拽组件并发布。
+4. 在编辑器中选择 `portable` 或 Home Assistant 的某个房间（Area），拖拽组件并发布。
+
+房间列表读取 Home Assistant 的 Area Registry；这里的“房间”不是 `zone.*` 地理位置实体，也不是 HA 实例区分。
 
 Add-on 会把文档写入以下 HA 实体，并触发标准 `state_changed` 事件：
 

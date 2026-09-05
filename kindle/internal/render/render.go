@@ -38,10 +38,18 @@ type Dialog struct {
 
 const NavigationBarHeight = 72
 
+const (
+	maxImageBytes  = 8 << 20
+	maxImagePixels = int64(2_000_000)
+	maxImageWidth  = 4096
+	maxImageHeight = 4096
+)
+
 type Navigation struct {
-	Show       bool
-	CanGoBack  bool
-	IsSettings bool
+	Show         bool
+	CanGoBack    bool
+	IsSettings   bool
+	PressedIndex int
 }
 
 type Renderer struct {
@@ -112,11 +120,17 @@ func (r *Renderer) drawElement(canvas *image.Gray, element model.Element, states
 		r.drawClimate(canvas, frame, element, states)
 	case "image", "image_button":
 		if element.Image == nil || strings.TrimSpace(element.Image.Src) == "" {
-			return errors.New("image element is missing image.src")
+			if element.Type == "image" {
+				r.drawImagePlaceholder(canvas, frame, "未设置图片")
+			}
+			return nil
 		}
 		asset, err := r.loadImage(element.Image.Src)
 		if err != nil {
-			return err
+			if element.Type == "image" {
+				r.drawImagePlaceholder(canvas, frame, "图片无法显示")
+			}
+			return nil
 		}
 		drawImage(canvas, frame, asset, element.Image.Fit)
 	default:
@@ -223,34 +237,67 @@ func formatAttribute(value any) string {
 func (r *Renderer) drawSwitch(canvas *image.Gray, frame image.Rectangle, element model.Element, states map[string]model.EntityState) {
 	style := element.Style
 	fillColor := parseColor(style.Fill, color.White)
-	strokeColor := parseColor(style.Stroke, parseColor(style.Color, color.Black))
-	fillRounded(canvas, frame, fillColor, maxInt(int(style.Radius), 0))
-	strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), maxInt(int(style.BorderWidth), 1))
+	strokeColor := parseColor(style.Stroke, color.Gray{Y: 190})
+	radius := maxInt(int(style.Radius), 16)
+	fillRounded(canvas, frame, fillColor, radius)
+	strokeRounded(canvas, frame, strokeColor, radius, maxInt(int(style.BorderWidth), 1))
 	status := "未绑定"
+	isOn := false
 	if element.Binding != nil {
 		status = "关"
 		if state, ok := states[element.Binding.EntityID]; ok && isOnState(state.State) {
 			status = "开"
+			isOn = true
 		}
 	}
 	title := element.Text
 	if strings.TrimSpace(title) == "" {
 		title = "开关"
 	}
-	textStyle := style
-	textStyle.Align = "center"
-	if textStyle.FontSize <= 0 {
-		textStyle.FontSize = 18
+	padding := minInt(18, maxInt(frame.Dx()/10, 8))
+	trackHeight := minInt(40, maxInt(frame.Dy()-24, 28))
+	trackWidth := minInt(84, maxInt(frame.Dx()/3, 64))
+	track := image.Rect(frame.Max.X-padding-trackWidth, frame.Min.Y+(frame.Dy()-trackHeight)/2, frame.Max.X-padding, frame.Min.Y+(frame.Dy()-trackHeight)/2+trackHeight)
+	trackColor := color.Gray{Y: 218}
+	if isOn {
+		trackColor = color.Gray{Y: 35}
 	}
-	r.drawTextBox(canvas, title+"\n"+status, frame, textStyle)
+	fillRounded(canvas, track, trackColor, trackHeight/2)
+	knobRadius := maxInt(trackHeight/2-4, 5)
+	knobX := track.Min.X + knobRadius + 4
+	if isOn {
+		knobX = track.Max.X - knobRadius - 4
+	}
+	fillCircle(canvas, knobX, track.Min.Y+trackHeight/2, knobRadius, color.White)
+	strokeCircle(canvas, knobX, track.Min.Y+trackHeight/2, knobRadius, color.Gray{Y: 130}, 1)
+	labelFrame := image.Rect(frame.Min.X+padding, frame.Min.Y+8, track.Min.X-padding, frame.Max.Y-8)
+	labelColor := style.Color
+	if strings.TrimSpace(labelColor) == "" {
+		labelColor = "#111111"
+	}
+	labelStyle := model.Style{Color: labelColor, FontSize: style.FontSize, FontWeight: style.FontWeight, Align: "left"}
+	if labelStyle.FontSize <= 0 {
+		labelStyle.FontSize = 18
+	}
+	labelHalf := maxInt(labelFrame.Dy()/2, 1)
+	r.drawTextBox(canvas, title, image.Rect(labelFrame.Min.X, labelFrame.Min.Y, labelFrame.Max.X, labelFrame.Min.Y+labelHalf), labelStyle)
+	if element.Binding == nil {
+		status = "未绑定"
+	} else if isOn {
+		status = "已开启"
+	} else {
+		status = "已关闭"
+	}
+	r.drawTextBox(canvas, status, image.Rect(labelFrame.Min.X, labelFrame.Min.Y+labelHalf, labelFrame.Max.X, labelFrame.Max.Y), model.Style{Color: "#696969", FontSize: 13, Align: "left"})
 }
 
 func (r *Renderer) drawClimate(canvas *image.Gray, frame image.Rectangle, element model.Element, states map[string]model.EntityState) {
 	style := element.Style
-	fillColor := parseColor(style.Fill, color.White)
-	strokeColor := parseColor(style.Stroke, parseColor(style.Color, color.Black))
-	fillRounded(canvas, frame, fillColor, maxInt(int(style.Radius), 0))
-	strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), maxInt(int(style.BorderWidth), 1))
+	fillColor := parseColor(style.Fill, color.Gray{Y: 247})
+	strokeColor := parseColor(style.Stroke, color.Gray{Y: 175})
+	radius := maxInt(int(style.Radius), 16)
+	fillRounded(canvas, frame, fillColor, radius)
+	strokeRounded(canvas, frame, strokeColor, radius, maxInt(int(style.BorderWidth), 1))
 	title := element.Text
 	current, target, mode := "—", "—", "—"
 	if element.Binding != nil {
@@ -264,13 +311,64 @@ func (r *Renderer) drawClimate(canvas *image.Gray, frame image.Rectangle, elemen
 	if strings.TrimSpace(title) == "" {
 		title = "温控"
 	}
-	textStyle := style
-	textStyle.Align = "center"
-	if textStyle.FontSize <= 0 {
-		textStyle.FontSize = 17
+	padding := minInt(18, maxInt(frame.Dx()/12, 8))
+	titleColor := style.Color
+	if strings.TrimSpace(titleColor) == "" {
+		titleColor = "#111111"
 	}
-	content := fmt.Sprintf("%s\n当前 %s    目标 %s\n模式 %s\n−       调低       调高       +", title, current, target, mode)
-	r.drawTextBox(canvas, content, frame, textStyle)
+	titleStyle := model.Style{Color: titleColor, FontSize: 18, FontWeight: "bold", Align: "left"}
+	r.drawTextBox(canvas, title, image.Rect(frame.Min.X+padding, frame.Min.Y+10, frame.Max.X-padding-120, frame.Min.Y+48), titleStyle)
+	modeLabel := climateModeLabel(mode)
+	modeWidth := minInt(112, maxInt(frame.Dx()/4, 76))
+	modeBox := image.Rect(frame.Max.X-padding-modeWidth, frame.Min.Y+12, frame.Max.X-padding, frame.Min.Y+42)
+	fillRounded(canvas, modeBox, color.Gray{Y: 225}, 15)
+	r.drawTextBox(canvas, modeLabel, modeBox, model.Style{Color: "#4b4b4b", FontSize: 13, Align: "center"})
+	readingTop := frame.Min.Y + 58
+	dividerY := frame.Max.Y - 72
+	if dividerY < readingTop+46 {
+		dividerY = frame.Min.Y + (frame.Dy()*2)/3
+	}
+	currentBox := image.Rect(frame.Min.X+padding, readingTop, frame.Min.X+frame.Dx()/2, dividerY-4)
+	targetBox := image.Rect(frame.Min.X+frame.Dx()/2, readingTop+12, frame.Max.X-padding, dividerY-4)
+	r.drawTextBox(canvas, temperatureLabel(current), currentBox, model.Style{Color: "#202020", FontSize: 32, FontWeight: "bold", Align: "left"})
+	r.drawTextBox(canvas, "当前温度", image.Rect(currentBox.Min.X, currentBox.Max.Y-26, currentBox.Max.X, currentBox.Max.Y), model.Style{Color: "#696969", FontSize: 12, Align: "left"})
+	r.drawTextBox(canvas, temperatureLabel(target), targetBox, model.Style{Color: "#3f3f3f", FontSize: 22, FontWeight: "bold", Align: "left"})
+	r.drawTextBox(canvas, "目标温度", image.Rect(targetBox.Min.X, targetBox.Max.Y-26, targetBox.Max.X, targetBox.Max.Y), model.Style{Color: "#696969", FontSize: 12, Align: "left"})
+	drawLine(canvas, image.Rect(frame.Min.X+padding, dividerY, frame.Max.X-padding, dividerY+1), color.Gray{Y: 205}, 1)
+	controlBox := image.Rect(frame.Min.X+padding, dividerY+5, frame.Max.X-padding, frame.Max.Y-5)
+	third := maxInt(controlBox.Dx()/3, 1)
+	r.drawTextBox(canvas, "−  调低", image.Rect(controlBox.Min.X, controlBox.Min.Y, controlBox.Min.X+third, controlBox.Max.Y), model.Style{Color: "#3d3d3d", FontSize: 14, Align: "center"})
+	r.drawTextBox(canvas, "模式", image.Rect(controlBox.Min.X+third, controlBox.Min.Y, controlBox.Min.X+third*2, controlBox.Max.Y), model.Style{Color: "#696969", FontSize: 13, Align: "center"})
+	r.drawTextBox(canvas, "＋  调高", image.Rect(controlBox.Min.X+third*2, controlBox.Min.Y, controlBox.Max.X, controlBox.Max.Y), model.Style{Color: "#3d3d3d", FontSize: 14, Align: "center"})
+}
+
+func climateModeLabel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "off":
+		return "关闭"
+	case "heat":
+		return "制热"
+	case "cool":
+		return "制冷"
+	case "auto", "heat_cool":
+		return "自动"
+	case "dry":
+		return "除湿"
+	case "fan_only":
+		return "送风"
+	default:
+		if strings.TrimSpace(value) == "" {
+			return "未绑定"
+		}
+		return value
+	}
+}
+
+func temperatureLabel(value string) string {
+	if strings.TrimSpace(value) == "" || value == "—" {
+		return "—"
+	}
+	return value + "°"
 }
 
 func attributeString(attributes map[string]any, key, fallback string) string {
@@ -303,8 +401,14 @@ func (r *Renderer) drawNavigation(canvas *image.Gray, navigation Navigation) {
 			right = bar.Max.X
 		}
 		itemStyle := model.Style{Color: "#111111", FontSize: 16, Align: "center"}
+		if index == navigation.PressedIndex {
+			fillRect(canvas, image.Rect(left, bar.Min.Y+2, right, bar.Max.Y), color.Black)
+			itemStyle.Color = "#ffffff"
+		}
 		if index == 0 && !navigation.CanGoBack {
-			itemStyle.Color = "#999999"
+			if index != navigation.PressedIndex {
+				itemStyle.Color = "#999999"
+			}
 		}
 		if index == 2 && navigation.IsSettings {
 			itemStyle.FontWeight = "bold"
@@ -367,8 +471,14 @@ func (r Renderer) loadImage(source string) (image.Image, error) {
 		var data []byte
 		var err error
 		if strings.Contains(meta, ";base64") {
+			if base64.StdEncoding.DecodedLen(len(payload)) > maxImageBytes {
+				return nil, fmt.Errorf("image file exceeds %d MiB", maxImageBytes/(1<<20))
+			}
 			data, err = base64.StdEncoding.DecodeString(payload)
 		} else {
+			if len(payload) > maxImageBytes {
+				return nil, fmt.Errorf("image file exceeds %d MiB", maxImageBytes/(1<<20))
+			}
 			decoded, decodeErr := url.PathUnescape(payload)
 			data, err = []byte(decoded), decodeErr
 		}
@@ -397,20 +507,30 @@ func (r Renderer) loadImage(source string) (image.Image, error) {
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return nil, fmt.Errorf("download image: %s", response.Status)
 		}
-		return decodeImage(io.LimitReader(response.Body, 8<<20))
+		return decodeImage(response.Body)
 	}
 	file, err := os.Open(filepath.Clean(source))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	return decodeImage(io.LimitReader(file, 8<<20))
+	return decodeImage(file)
 }
 
 func decodeImage(reader io.Reader) (image.Image, error) {
-	data, err := io.ReadAll(reader)
+	data, err := io.ReadAll(io.LimitReader(reader, maxImageBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxImageBytes {
+		return nil, fmt.Errorf("image file exceeds %d MiB", maxImageBytes/(1<<20))
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if config.Width <= 0 || config.Height <= 0 || config.Width > maxImageWidth || config.Height > maxImageHeight || int64(config.Width)*int64(config.Height) > maxImagePixels {
+		return nil, fmt.Errorf("image dimensions %dx%d are too large", config.Width, config.Height)
 	}
 	decoded, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -420,6 +540,12 @@ func decodeImage(reader io.Reader) (image.Image, error) {
 		return nil, errors.New("unknown image format")
 	}
 	return decoded, nil
+}
+
+func (r *Renderer) drawImagePlaceholder(canvas *image.Gray, frame image.Rectangle, message string) {
+	fillRounded(canvas, frame, color.Gray{Y: 248}, 8)
+	strokeRounded(canvas, frame, color.Gray{Y: 185}, 8, 1)
+	r.drawTextBox(canvas, message, frame, model.Style{Color: "#777777", FontSize: 14, Align: "center"})
 }
 
 func wrapText(value string, face font.Face, maxWidth int) []string {
@@ -556,6 +682,7 @@ func fill(canvas *image.Gray, value color.Color) {
 }
 
 func fillRect(canvas *image.Gray, rect image.Rectangle, value color.Color) {
+	rect = rect.Intersect(canvas.Bounds())
 	gray := color.GrayModel.Convert(value).(color.Gray)
 	for y := rect.Min.Y; y < rect.Max.Y; y++ {
 		for x := rect.Min.X; x < rect.Max.X; x++ {
@@ -565,6 +692,10 @@ func fillRect(canvas *image.Gray, rect image.Rectangle, value color.Color) {
 }
 
 func fillRounded(canvas *image.Gray, rect image.Rectangle, value color.Color, radius int) {
+	rect = rect.Intersect(canvas.Bounds())
+	if rect.Empty() {
+		return
+	}
 	gray := color.GrayModel.Convert(value).(color.Gray)
 	if radius <= 0 {
 		for y := rect.Min.Y; y < rect.Max.Y; y++ {
@@ -584,7 +715,52 @@ func fillRounded(canvas *image.Gray, rect image.Rectangle, value color.Color, ra
 	}
 }
 
+func fillCircle(canvas *image.Gray, centerX, centerY, radius int, value color.Color) {
+	if radius <= 0 {
+		return
+	}
+	gray := color.GrayModel.Convert(value).(color.Gray)
+	radiusSquared := radius * radius
+	for y := centerY - radius; y <= centerY+radius; y++ {
+		for x := centerX - radius; x <= centerX+radius; x++ {
+			if !image.Pt(x, y).In(canvas.Bounds()) {
+				continue
+			}
+			deltaX, deltaY := x-centerX, y-centerY
+			if deltaX*deltaX+deltaY*deltaY <= radiusSquared {
+				canvas.SetGray(x, y, gray)
+			}
+		}
+	}
+}
+
+func strokeCircle(canvas *image.Gray, centerX, centerY, radius int, value color.Color, width int) {
+	if radius <= 0 || width <= 0 {
+		return
+	}
+	gray := color.GrayModel.Convert(value).(color.Gray)
+	outerSquared := radius * radius
+	innerRadius := maxInt(radius-width, 0)
+	innerSquared := innerRadius * innerRadius
+	for y := centerY - radius; y <= centerY+radius; y++ {
+		for x := centerX - radius; x <= centerX+radius; x++ {
+			if !image.Pt(x, y).In(canvas.Bounds()) {
+				continue
+			}
+			deltaX, deltaY := x-centerX, y-centerY
+			distanceSquared := deltaX*deltaX + deltaY*deltaY
+			if distanceSquared <= outerSquared && distanceSquared > innerSquared {
+				canvas.SetGray(x, y, gray)
+			}
+		}
+	}
+}
+
 func strokeRounded(canvas *image.Gray, rect image.Rectangle, value color.Color, radius, width int) {
+	rect = rect.Intersect(canvas.Bounds())
+	if rect.Empty() {
+		return
+	}
 	gray := color.GrayModel.Convert(value).(color.Gray)
 	for y := rect.Min.Y; y < rect.Max.Y; y++ {
 		for x := rect.Min.X; x < rect.Max.X; x++ {
@@ -627,6 +803,10 @@ func roundedContains(rect image.Rectangle, x, y, radius int) bool {
 }
 
 func drawLine(canvas *image.Gray, rect image.Rectangle, value color.Color, width int) {
+	rect = rect.Intersect(canvas.Bounds())
+	if rect.Empty() {
+		return
+	}
 	gray := color.GrayModel.Convert(value).(color.Gray)
 	if rect.Dx() >= rect.Dy() {
 		for y := rect.Min.Y; y < rect.Min.Y+width && y < rect.Max.Y; y++ {

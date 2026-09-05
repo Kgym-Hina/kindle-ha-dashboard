@@ -18,12 +18,12 @@
 
 ## 数据流
 
-1. React 编辑器通过 Add-on backend 读取界面文档和 HA zones。
+1. React 编辑器通过 Add-on backend 读取界面文档和 Home Assistant Area Registry 房间。
 2. 发布时 backend 将文档保存到 `/data/documents/`，并以 `POST /api/states/...` 写入 Home Assistant 实体属性 `document`。
 3. Kindle 启动后通过 Long-Lived Access Token 连接 `/api/websocket`，订阅 `state_changed` 和 `kindle_dashboard_message`。
-4. Kindle 首次启动通过 REST 获取 portable 文档；收到 location 状态后切换到对应 zone 文档；收到文档或绑定实体状态更新时仅在实际画面变化时重绘，并每 10 秒通过 REST 校准一次；连续 30 分钟无变化时强制刷新一次电子墨水屏。
+4. Kindle 首次启动通过 REST 获取 portable 文档；收到 location 状态后切换到对应房间文档；收到文档或绑定实体状态更新时仅在实际画面变化时重绘，并每 10 秒通过 REST 校准一次；连续 30 分钟无变化时强制刷新一次电子墨水屏。
 5. 点击 JSON 中定义的 `call_service` 动作时，Kindle 直接通过 HA WebSocket `call_service` 执行服务；开关和温控组件使用同一通道执行内置服务。
-6. ESP32 通过 ADC 读取底座电阻值，区间映射成 zone ID，并向 HA 写入位置实体；电阻变化才上报，避免制造事件风暴。
+6. ESP32 通过 ADC 读取底座电阻值，区间映射成房间 ID，并向 HA 写入位置实体；电阻变化才上报，避免制造事件风暴。
 7. Kindle 周期性从 `/sys/class/power_supply/` 读取电量，使用 HA REST 更新电池实体。
 
 ## 模块边界

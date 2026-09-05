@@ -20,6 +20,8 @@
 }
 ```
 
+当 `target.mode` 为 `zone` 时，`zone_id` 保存 Home Assistant Area 的 ID。协议字段名保留为 `zone_id`，用于兼容已有文档；编辑器中的发布目标显示为“房间”，指的是 HA Area（房间），不是 `zone.*` 地理位置实体。
+
 每个页面包含 `id`、`name`、可选的 `parent_id`、`background` 和 `elements`。`parent_id` 用于组成可从页面跳转进入的子页。组件的公共字段为 `id`、`type`、`frame`、`style` 和可选 `action`：
 
 - `text`：使用 `text` 显示文本。
@@ -76,13 +78,13 @@ sensor.kindle_dashboard_zone_<zone_id>
 
 实体的 `state` 是 revision 字符串，属性中的 `document` 是完整界面 JSON。
 
-### 位置实体
+### Kindle 位置实体
 
 ```text
 sensor.kindle_<device_id>_location
 ```
 
-`state` 是 zone ID，属性包含 `resistance_ohms`、`raw_mv` 和 `source`。
+`state` 是 Kindle 当前所在房间的 ID，属性包含 `resistance_ohms`、`raw_mv` 和 `source`。
 
 ### 电池实体
 

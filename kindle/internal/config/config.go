@@ -11,42 +11,47 @@ import (
 )
 
 type Config struct {
-	HAURL              string `json:"ha_url"`
-	LongLivedToken     string `json:"long_lived_token"`
-	DeviceID           string `json:"device_id"`
-	PortableEntity     string `json:"portable_entity,omitempty"`
-	ZoneEntityPrefix   string `json:"zone_entity_prefix,omitempty"`
-	LocationEntity     string `json:"location_entity,omitempty"`
-	BatteryEntity      string `json:"battery_entity,omitempty"`
-	InputDevice        string `json:"input_device"`
-	TouchWidth         int    `json:"touch_width"`
-	TouchHeight        int    `json:"touch_height"`
-	DisplayWidth       int    `json:"display_width"`
-	DisplayHeight      int    `json:"display_height"`
-	BatteryIntervalSec int    `json:"battery_interval_seconds"`
-	TempDir            string `json:"temp_dir"`
-	FontPath           string `json:"font_path,omitempty"`
-	FontBoldPath       string `json:"font_bold_path,omitempty"`
+	HAURL                       string `json:"ha_url"`
+	LongLivedToken              string `json:"long_lived_token"`
+	DeviceID                    string `json:"device_id"`
+	PortableEntity              string `json:"portable_entity,omitempty"`
+	ZoneEntityPrefix            string `json:"zone_entity_prefix,omitempty"`
+	LocationEntity              string `json:"location_entity,omitempty"`
+	BatteryEntity               string `json:"battery_entity,omitempty"`
+	InputDevice                 string `json:"input_device"`
+	TouchWidth                  int    `json:"touch_width"`
+	TouchHeight                 int    `json:"touch_height"`
+	DisplayWidth                int    `json:"display_width"`
+	DisplayHeight               int    `json:"display_height"`
+	BatteryIntervalSec          int    `json:"battery_interval_seconds"`
+	DashboardRefreshIntervalSec int    `json:"dashboard_refresh_interval_seconds"`
+	ForceRefreshIntervalSec     int    `json:"force_refresh_interval_seconds"`
+	TempDir                     string `json:"temp_dir"`
+	FontPath                    string `json:"font_path,omitempty"`
+	FontBoldPath                string `json:"font_bold_path,omitempty"`
 }
 
 const (
+	Version             = "0.1.5"
 	DefaultFontPath     = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Regular.otf"
 	DefaultFontBoldPath = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Bold.otf"
 )
 
 func Defaults() Config {
 	return Config{
-		HAURL:              "http://homeassistant.local:8123",
-		DeviceID:           "kindle-01",
-		InputDevice:        "/dev/input/event1",
-		TouchWidth:         599,
-		TouchHeight:        799,
-		DisplayWidth:       600,
-		DisplayHeight:      800,
-		BatteryIntervalSec: 300,
-		TempDir:            "/var/tmp/kindle-ha-dashboard",
-		FontPath:           DefaultFontPath,
-		FontBoldPath:       DefaultFontBoldPath,
+		HAURL:                       "http://homeassistant.local:8123",
+		DeviceID:                    "kindle-01",
+		InputDevice:                 "/dev/input/event1",
+		TouchWidth:                  599,
+		TouchHeight:                 799,
+		DisplayWidth:                600,
+		DisplayHeight:               800,
+		BatteryIntervalSec:          300,
+		DashboardRefreshIntervalSec: 10,
+		ForceRefreshIntervalSec:     1800,
+		TempDir:                     "/var/tmp/kindle-ha-dashboard",
+		FontPath:                    DefaultFontPath,
+		FontBoldPath:                DefaultFontBoldPath,
 	}
 }
 
@@ -94,6 +99,12 @@ func (c *Config) applyDerivedDefaults() {
 	if c.FontBoldPath == "" {
 		c.FontBoldPath = DefaultFontBoldPath
 	}
+	if c.DashboardRefreshIntervalSec <= 0 {
+		c.DashboardRefreshIntervalSec = 10
+	}
+	if c.ForceRefreshIntervalSec <= 0 {
+		c.ForceRefreshIntervalSec = 1800
+	}
 }
 
 func (c Config) Validate() error {
@@ -114,6 +125,12 @@ func (c Config) Validate() error {
 	}
 	if c.BatteryIntervalSec <= 0 {
 		return errors.New("battery_interval_seconds must be positive")
+	}
+	if c.DashboardRefreshIntervalSec <= 0 {
+		return errors.New("dashboard_refresh_interval_seconds must be positive")
+	}
+	if c.ForceRefreshIntervalSec <= 0 {
+		return errors.New("force_refresh_interval_seconds must be positive")
 	}
 	return nil
 }

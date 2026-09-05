@@ -22,10 +22,26 @@ export function createElement(type: DashboardElement["type"], index: number): Da
     case "image": return { ...shared, type, image: { src: "", fit: "contain" }, frame: { x: 48, y: 72 + index * 18, width: 240, height: 160 } };
     case "rect": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 300, height: 120 }, style: { ...shared.style, fill: "#f0eee8", radius: 16 } };
     case "line": return { ...shared, type };
-    case "switch": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 300, height: 108 }, style: { ...shared.style, fill: "#f0f4ef", stroke: "#79927e", radius: 14, font_size: 18 }, text: "开关" };
-    case "climate": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 480, height: 246 }, style: { ...shared.style, fill: "#f0f4ef", stroke: "#79927e", radius: 16, font_size: 18 }, text: "温控", climate: { temperature_step: 0.5 } };
+    case "switch": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 280, height: 76 }, style: { ...shared.style, fill: "#ffffff", stroke: "#d2d6d0", border_width: 1, radius: 18, font_size: 18, align: "left" }, text: "开关" };
+    case "climate": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 480, height: 230 }, style: { ...shared.style, fill: "#f7f8f5", stroke: "#b7bfba", border_width: 1, radius: 16, font_size: 18, align: "left" }, text: "温控", climate: { temperature_step: 0.5 } };
   }
   return { ...shared, type: "text", text: "新文本" };
+}
+
+export function cloneElement(element: DashboardElement, id = element.id): DashboardElement {
+  return {
+    ...element,
+    id,
+    frame: { ...element.frame },
+    style: element.style ? { ...element.style } : undefined,
+    image: element.image ? { ...element.image } : undefined,
+    binding: element.binding ? { ...element.binding } : undefined,
+    climate: element.climate ? { ...element.climate } : undefined,
+    action: element.action ? {
+      ...element.action,
+      service_data: element.action.service_data ? { ...element.action.service_data } : undefined
+    } : undefined
+  };
 }
 
 export function patchElement(page: DashboardPage, elementId: string, patch: Partial<DashboardElement>): DashboardPage {

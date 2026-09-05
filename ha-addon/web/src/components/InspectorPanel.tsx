@@ -108,14 +108,45 @@ function ImageFields({ element, onChange }: { element: DashboardElement; onChang
   const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !["image/png", "image/jpeg", "image/gif"].includes(file.type)) return;
-    const reader = new FileReader();
-    reader.onload = () => onChange({ image: { ...image, src: String(reader.result) } });
-    reader.readAsDataURL(file);
+    normalizeImage(file).then((src) => onChange({ image: { ...image, src } })).catch(() => undefined);
+    event.target.value = "";
   };
   return <>
     <label className="field full"><span>图片地址</span><input value={image.src} onChange={(event) => onChange({ image: { ...image, src: event.target.value } })} placeholder="https://… 或选择本地图片" /></label>
     <div className="image-actions"><label className="upload-button">上传图片<input type="file" accept="image/png,image/jpeg,image/gif" onChange={handleUpload} /></label><SelectField label="适配" value={image.fit || "contain"} options={["contain", "cover", "stretch"]} onChange={(value) => onChange({ image: { ...image, fit: value as "contain" | "cover" | "stretch" } })} /></div>
   </>;
+}
+
+function normalizeImage(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file);
+  return new Promise((resolve, reject) => {
+    const preview = new window.Image();
+    preview.onload = () => {
+      try {
+        const maxWidth = 600;
+        const maxHeight = 800;
+        const scale = Math.min(1, maxWidth / preview.naturalWidth, maxHeight / preview.naturalHeight);
+        const width = Math.max(1, Math.round(preview.naturalWidth * scale));
+        const height = Math.max(1, Math.round(preview.naturalHeight * scale));
+        const canvas = window.document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("canvas is unavailable");
+        context.drawImage(preview, 0, 0, width, height);
+        resolve(canvas.toDataURL(file.type === "image/jpeg" ? "image/jpeg" : "image/png", 0.86));
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    preview.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("image could not be loaded"));
+    };
+    preview.src = objectUrl;
+  });
 }
 
 function ActionFields({ action, pages, entities, services, onChange }: { action?: DashboardAction; pages: DashboardPage[]; entities: EntitySummary[]; services: ServiceInfo[]; onChange: (action: DashboardAction | undefined) => void }) {

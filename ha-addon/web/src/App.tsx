@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlignmentToolbar, type Alignment } from "./components/AlignmentToolbar";
 import { EditorCanvas } from "./components/EditorCanvas";
 import { InspectorPanel } from "./components/InspectorPanel";
@@ -10,7 +10,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { TargetBar } from "./components/TargetBar";
 import { TopBar } from "./components/TopBar";
 import { getDashboard, getEntities, getRuntimeConfig, getServices, getZones, publishDashboard, saveRuntimeConfig, sendMessage } from "./lib/api";
-import { createDocument, createElement, patchElement } from "./lib/document";
+import { cloneElement, createDocument, createElement, patchElement } from "./lib/document";
 import type { DashboardDocument, DashboardElement, DashboardFrame, DashboardMode, DashboardTarget, EntitySummary, KindleMessage, RuntimeConfig, ServiceInfo, ZoneInfo } from "./types";
 import { canvasHeight, canvasWidth } from "./types";
 
@@ -32,6 +32,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
   const [layerMenu, setLayerMenu] = useState<{ elementId: string; x: number; y: number } | null>(null);
+  const elementClipboard = useRef<DashboardElement | null>(null);
 
   const page = document.pages[activePage] || document.pages[0]!;
   const selectedElement = useMemo(() => page?.elements.find((element) => element.id === selectedId) || null, [page, selectedId]);
@@ -110,7 +111,8 @@ export default function App() {
   const duplicateElement = () => {
     if (!selectedElement) return;
     const contentHeight = canvasHeight - 72;
-    const duplicate: DashboardElement = { ...selectedElement, id: `${selectedElement.type}-${Date.now()}`, frame: { ...selectedElement.frame, x: Math.min(canvasWidth - selectedElement.frame.width, selectedElement.frame.x + 20), y: Math.min(contentHeight - selectedElement.frame.height, selectedElement.frame.y + 20) } };
+    const duplicate = cloneElement(selectedElement, `${selectedElement.type}-${Date.now()}`);
+    duplicate.frame = { ...duplicate.frame, x: Math.max(0, Math.min(canvasWidth - duplicate.frame.width, duplicate.frame.x + 20)), y: Math.max(0, Math.min(contentHeight - duplicate.frame.height, duplicate.frame.y + 20)) };
     updateCurrentPage({ ...page, elements: [...page.elements, duplicate] }); setSelectedId(duplicate.id);
   };
 
@@ -120,6 +122,58 @@ export default function App() {
     const nextPage = { id: `page-${Date.now()}`, name: parentId ? `子页 ${index}` : `Page ${index}`, parent_id: parentId, background: document.target.background, elements: [] };
     setDocument((current) => ({ ...current, pages: [...current.pages, nextPage] })); setActivePage(index - 1); setSelectedId(null);
   };
+
+  const renamePage = (index: number, name: string) => {
+    setDocument((current) => ({ ...current, pages: current.pages.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, name } : candidate) }));
+  };
+
+  const pasteElement = () => {
+    const source = elementClipboard.current;
+    if (!source) return;
+    const contentHeight = canvasHeight - 72;
+    const width = Math.min(canvasWidth, Math.max(1, source.frame.width));
+    const height = Math.min(contentHeight, Math.max(1, source.frame.height));
+    const pasted = cloneElement(source, `${source.type}-${Date.now()}-${page.elements.length}`);
+    pasted.frame = {
+      x: Math.max(0, Math.min(canvasWidth - width, source.frame.x + 20)),
+      y: Math.max(0, Math.min(contentHeight - height, source.frame.y + 20)),
+      width,
+      height
+    };
+    updateCurrentPage({ ...page, elements: [...page.elements, pasted] });
+    setSelectedId(pasted.id);
+    notify("已粘贴组件");
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedElement) {
+        event.preventDefault();
+        deleteElement();
+        notify("已删除组件");
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "c" && selectedElement) {
+        event.preventDefault();
+        elementClipboard.current = cloneElement(selectedElement);
+        notify("已复制组件");
+      } else if (key === "x" && selectedElement) {
+        event.preventDefault();
+        elementClipboard.current = cloneElement(selectedElement);
+        deleteElement();
+        notify("已剪切组件");
+      } else if (key === "v" && elementClipboard.current) {
+        event.preventDefault();
+        pasteElement();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activePage, page, selectedElement, selectedId]);
 
   const alignElement = (alignment: Alignment) => {
     if (!selectedElement) return;
@@ -187,11 +241,11 @@ export default function App() {
       <div className="editor-layout">
         <Palette onAdd={addElement} />
         <section className="studio-column">
-          <PageTabs pages={document.pages} activeIndex={activePage} onSelect={(index) => { setActivePage(index); setSelectedId(null); setLayerMenu(null); }} onAddRoot={() => addPage()} onAddChild={(index) => addPage(index)} />
+          <PageTabs pages={document.pages} activeIndex={activePage} onSelect={(index) => { setActivePage(index); setSelectedId(null); setLayerMenu(null); }} onAddRoot={() => addPage()} onAddChild={(index) => addPage(index)} onRename={renamePage} />
           <div className="canvas-card panel-card">
             <div className="canvas-card-header"><div><h2>{page?.name || "页面"}</h2></div><div className="canvas-header-tools"><AlignmentToolbar selected={selectedElement} onAlign={alignElement} /><div className="canvas-meta"><span>黑白预览</span><span className="meta-divider" /><span>{page?.elements.length || 0} 个组件</span></div></div></div>
             <div className="canvas-wrap">{loading ? <div className="canvas-loading">载入界面…</div> : <EditorCanvas page={page} width={canvasWidth} height={canvasHeight} entities={entities} selectedId={selectedId} onSelect={(id) => { setSelectedId(id || null); setLayerMenu(null); }} onMove={moveElement} onResize={moveElement} onContextMenu={(elementId, x, y) => { setSelectedId(elementId); setLayerMenu({ elementId, x, y }); }} />}</div>
-            <div className="canvas-card-footer"><span>拖拽定位 · 拖动控制点调整尺寸 · 右键管理图层</span><span>revision {document.revision}</span></div>
+            <div className="canvas-card-footer"><span>拖拽定位 · 控点缩放 · 右键图层 · Delete 删除 · ⌘/Ctrl+C/V/X</span><span>revision {document.revision}</span></div>
           </div>
         </section>
         <InspectorPanel element={selectedElement} pages={document.pages} entities={entities} services={services} onChange={changeElement} onDelete={deleteElement} onDuplicate={duplicateElement} />

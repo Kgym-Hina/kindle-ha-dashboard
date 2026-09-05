@@ -129,10 +129,13 @@ function CanvasElement({ element, entities, selected, onSelect, onContextMenu, o
     borderRadius: isImageButton ? 0 : style.radius ?? 0,
     fontSize: style.font_size || 16,
     fontWeight: style.font_weight || "normal",
-    textAlign: style.align || "left"
+    textAlign: textAlignForPreview(style.align),
+    justifyContent: element.type === "switch" || element.type === "climate" ? "flex-start" : "center"
   };
   const entity = element.binding ? entities.find((candidate) => candidate.entity_id === element.binding?.entity_id) : undefined;
   const entityValue = entity ? entity.state : "未绑定";
+  const switchIsOn = Boolean(entity && isOnState(entity.state));
+  const switchLabel = entity ? (switchIsOn ? "已开启" : "已关闭") : "未绑定";
   const climateValue = entity ? formatClimatePreview(entity) : "未绑定";
   return (
     <div
@@ -151,11 +154,12 @@ function CanvasElement({ element, entities, selected, onSelect, onContextMenu, o
     >
       {element.type === "line" ? <span className="line-visual" style={{ background: style.stroke || style.color || "#171717", height: style.border_width || 2 }} /> : null}
       {element.type === "image" || element.type === "image_button" ? (
-        element.image?.src ? <img src={element.image.src} alt="" style={{ objectFit: element.image.fit === "stretch" ? "fill" : element.image.fit || "contain" }} /> : <span className="empty-image">未设置图片</span>
+        element.image?.src ? <img src={element.image.src} alt="" style={{ objectFit: imageObjectFit(element.image.fit) }} /> : <span className="empty-image">未设置图片</span>
       ) : null}
       {element.type === "text" || element.type === "button" ? <span className="element-text">{element.text}</span> : null}
-      {element.type === "switch" ? <span className="element-text">{element.text || "开关"}<br /><small>{entityValue}</small></span> : null}
-      {element.type === "climate" ? <span className="element-text">{element.text || "温控"}<br /><small>{climateValue}</small></span> : null}
+      {element.type === "switch" ? <span className="switch-preview-copy"><strong>{element.text || "开关"}</strong><small>{switchLabel}</small></span> : null}
+      {element.type === "switch" ? <span className={`switch-preview ${switchIsOn ? "is-on" : ""}`} aria-label={entityValue}><span /></span> : null}
+      {element.type === "climate" ? <><span className="climate-preview-heading"><strong>{element.text || "温控"}</strong><small>{entity ? entity.state : "未绑定"}</small></span><span className="climate-preview-reading"><strong>{entity ? entity.state : "—"}</strong><small>{climateValue}</small></span><span className="climate-preview-controls"><span>− 调低</span><span>模式</span><span>＋ 调高</span></span></> : null}
       {selected ? <ResizeHandles onStartResize={onStartResize} /> : null}
     </div>
   );
@@ -193,6 +197,22 @@ function resizeFrame(frame: DashboardFrame, handle: ResizeHandle, deltaX: number
 function formatClimatePreview(entity: EntitySummary): string {
   const state = entity.state || "—";
   return `${state} · ${entity.name}`;
+}
+
+function imageObjectFit(fit: "contain" | "cover" | "stretch" | undefined): CSSProperties["objectFit"] {
+  if (fit === "cover") return "cover";
+  if (fit === "stretch") return "fill";
+  return "contain";
+}
+
+function textAlignForPreview(align: "left" | "center" | "right" | undefined): CSSProperties["textAlign"] {
+  if (align === "center") return "center";
+  if (align === "right") return "right";
+  return "left";
+}
+
+function isOnState(value: string): boolean {
+  return ["on", "true", "1", "yes"].includes(value.trim().toLowerCase());
 }
 
 function labelForType(type: DashboardElement["type"]): string {
