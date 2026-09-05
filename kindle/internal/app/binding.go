@@ -109,14 +109,41 @@ func stateMapsEqual(left, right map[string]model.EntityState) bool {
 }
 
 func (a *App) toggleSwitch(ctx context.Context, element model.Element) {
-	if element.Binding == nil || strings.TrimSpace(element.Binding.EntityID) == "" {
+	if element.Binding == nil {
 		return
 	}
+	entityID := strings.TrimSpace(element.Binding.EntityID)
+	if entityID == "" {
+		return
+	}
+	if err := a.executeService(ctx, "switch", "toggle", map[string]any{"entity_id": entityID}); err != nil {
+		logServiceError("switch.toggle", err)
+		return
+	}
+	select {
+	case <-time.After(180 * time.Millisecond):
+	case <-ctx.Done():
+		return
+	}
+	refreshCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if state, err := a.ha.FetchState(refreshCtx, entityID); err == nil {
+		a.handleState(ctx, *state)
+	} else if !errors.Is(err, context.Canceled) {
+		logServiceError("switch.refresh", err)
+	}
+}
+
+func (a *App) callService(ctx context.Context, domain, service string, serviceData map[string]any) {
+	if err := a.executeService(ctx, domain, service, serviceData); err != nil {
+		log.Printf("call service %s.%s: %v", domain, service, err)
+	}
+}
+
+func (a *App) executeService(ctx context.Context, domain, service string, serviceData map[string]any) error {
 	callCtx, cancel := context.WithTimeout(ctx, serviceTimeout)
 	defer cancel()
-	if err := a.ha.CallService(callCtx, "switch", "toggle", map[string]any{"entity_id": element.Binding.EntityID}); err != nil {
-		logServiceError("switch.toggle", err)
-	}
+	return a.ha.CallService(callCtx, domain, service, serviceData)
 }
 
 func (a *App) handleClimateTouch(ctx context.Context, element model.Element, x, y int) {

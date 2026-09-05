@@ -388,11 +388,11 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 			continue
 		}
 		if element.Type == "switch" {
-			a.toggleSwitch(ctx, element)
+			go a.toggleSwitch(ctx, element)
 			return false
 		}
 		if element.Type == "climate" {
-			a.handleClimateTouch(ctx, element, x, y)
+			go a.handleClimateTouch(ctx, element, x, y)
 			return false
 		}
 		if element.Action == nil {
@@ -433,11 +433,7 @@ func (a *App) runAction(ctx context.Context, action *model.Action) bool {
 		a.renderAndLog()
 		return false
 	case "call_service":
-		callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		if err := a.ha.CallService(callCtx, action.Domain, action.Service, action.ServiceData); err != nil {
-			log.Printf("call service %s.%s: %v", action.Domain, action.Service, err)
-		}
+		go a.callService(ctx, action.Domain, action.Service, action.ServiceData)
 		return false
 	case "show_message":
 		a.handleMessage(ha.Message{Title: action.Title, Message: action.Message, TimeoutMS: action.TimeoutMS})

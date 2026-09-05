@@ -1,6 +1,7 @@
 package ha
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -95,14 +96,10 @@ func (c *Client) UpdateState(ctx context.Context, entityID, state string, attrib
 }
 
 func (c *Client) CallService(ctx context.Context, domain, service string, serviceData map[string]any) error {
-	if strings.TrimSpace(domain) == "" || strings.TrimSpace(service) == "" {
+	domain = strings.TrimSpace(domain)
+	service = strings.TrimSpace(service)
+	if domain == "" || service == "" {
 		return errors.New("call_service requires domain and service")
-	}
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-	if conn == nil {
-		return errors.New("home assistant websocket is not connected")
 	}
 	if serviceData == nil {
 		serviceData = map[string]any{}
@@ -114,7 +111,58 @@ func (c *Client) CallService(ctx context.Context, domain, service string, servic
 		"service":      service,
 		"service_data": serviceData,
 	}
-	return c.write(conn, message)
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+	var websocketErr error
+	if conn != nil {
+		if err := c.write(conn, message); err == nil {
+			return nil
+		} else {
+			websocketErr = err
+			c.clearConnection(conn)
+		}
+	}
+	if err := c.callServiceHTTP(ctx, domain, service, serviceData); err != nil {
+		if websocketErr != nil {
+			return fmt.Errorf("websocket: %v; rest: %w", websocketErr, err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (c *Client) callServiceHTTP(ctx context.Context, domain, service string, serviceData map[string]any) error {
+	body, err := json.Marshal(serviceData)
+	if err != nil {
+		return fmt.Errorf("encode service data: %w", err)
+	}
+	path := fmt.Sprintf("/api/services/%s/%s", url.PathEscape(domain), url.PathEscape(service))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL(path), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	c.authorize(request)
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+		return fmt.Errorf("call service %s.%s: %s: %s", domain, service, response.Status, strings.TrimSpace(string(responseBody)))
+	}
+	return nil
+}
+
+func (c *Client) clearConnection(conn *websocket.Conn) {
+	c.mu.Lock()
+	if c.conn == conn {
+		c.conn = nil
+	}
+	c.mu.Unlock()
+	_ = conn.Close()
 }
 
 func (c *Client) Run(ctx context.Context, onState func(State), onMessage func(Message)) error {
