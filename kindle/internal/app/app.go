@@ -40,7 +40,7 @@ func New(cfg config.Config) *App {
 		cfg:      cfg,
 		ha:       client,
 		renderer: render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath},
-		display:  ui.Display{TempDir: cfg.TempDir},
+		display:  ui.Display{TempDir: cfg.TempDir, Width: cfg.DisplayWidth, Height: cfg.DisplayHeight},
 	}
 }
 
@@ -112,7 +112,9 @@ func (a *App) Run(ctx context.Context) error {
 			}
 			if event.Released {
 				if press != nil {
-					a.handleTouch(ctx, press.X, press.Y)
+					if a.handleTouch(ctx, press.X, press.Y) {
+						return nil
+					}
 				}
 				press = nil
 			}
@@ -132,12 +134,17 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
-func (a *App) resync(ctx context.Context) {
+func (a *App) resync(ctx context.Context) error {
+	var refreshErrors []string
 	if state, err := a.ha.FetchState(ctx, a.cfg.PortableEntity); err == nil {
 		a.handleState(ctx, *state)
+	} else {
+		refreshErrors = append(refreshErrors, fmt.Sprintf("portable: %v", err))
 	}
 	if state, err := a.ha.FetchState(ctx, a.cfg.LocationEntity); err == nil && usableZone(state.State) {
 		a.handleState(ctx, *state)
+	} else if err != nil {
+		refreshErrors = append(refreshErrors, fmt.Sprintf("location: %v", err))
 	}
 	a.mu.RLock()
 	zone := a.currentZone
@@ -145,8 +152,14 @@ func (a *App) resync(ctx context.Context) {
 	if usableZone(zone) {
 		if state, err := a.ha.FetchState(ctx, a.cfg.ZoneEntity(zone)); err == nil {
 			a.handleState(ctx, *state)
+		} else {
+			refreshErrors = append(refreshErrors, fmt.Sprintf("zone %s: %v", zone, err))
 		}
 	}
+	if len(refreshErrors) > 0 {
+		return errors.New(strings.Join(refreshErrors, "; "))
+	}
+	return nil
 }
 
 func (a *App) loadInitial(ctx context.Context) error {
@@ -266,7 +279,7 @@ func (a *App) handleMessage(message ha.Message) {
 	a.renderAndLog()
 }
 
-func (a *App) handleTouch(ctx context.Context, x, y int) {
+func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 	if a.cfg.TouchWidth > 0 {
 		x = x * a.cfg.DisplayWidth / a.cfg.TouchWidth
 	}
@@ -279,13 +292,19 @@ func (a *App) handleTouch(ctx context.Context, x, y int) {
 		a.dialogDeadline = time.Time{}
 		a.mu.Unlock()
 		a.renderAndLog()
-		return
+		return false
 	}
 	document := a.current
 	pageIndex := a.pageIndex
 	a.mu.Unlock()
 	if document == nil {
-		return
+		document = fallbackDocument(a.cfg.DisplayWidth, a.cfg.DisplayHeight)
+	}
+	if document.Target.Width > 0 && document.Target.Width != a.cfg.DisplayWidth {
+		x = x * document.Target.Width / a.cfg.DisplayWidth
+	}
+	if document.Target.Height > 0 && document.Target.Height != a.cfg.DisplayHeight {
+		y = y * document.Target.Height / a.cfg.DisplayHeight
 	}
 	page := document.Page(pageIndex)
 	for index := len(page.Elements) - 1; index >= 0; index-- {
@@ -293,12 +312,12 @@ func (a *App) handleTouch(ctx context.Context, x, y int) {
 		if !contains(element.Frame, x, y) || element.Action == nil {
 			continue
 		}
-		a.runAction(ctx, element.Action)
-		return
+		return a.runAction(ctx, element.Action)
 	}
+	return false
 }
 
-func (a *App) runAction(ctx context.Context, action *model.Action) {
+func (a *App) runAction(ctx context.Context, action *model.Action) bool {
 	switch action.Type {
 	case "navigate_page":
 		a.mu.Lock()
@@ -309,16 +328,31 @@ func (a *App) runAction(ctx context.Context, action *model.Action) {
 		}
 		a.mu.Unlock()
 		a.renderAndLog()
+		return false
 	case "call_service":
 		callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
 		if err := a.ha.CallService(callCtx, action.Domain, action.Service, action.ServiceData); err != nil {
 			log.Printf("call service %s.%s: %v", action.Domain, action.Service, err)
 		}
+		return false
 	case "show_message":
 		a.handleMessage(ha.Message{Title: action.Title, Message: action.Message, TimeoutMS: action.TimeoutMS})
+		return false
+	case "refresh_config":
+		refreshCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		if err := a.resync(refreshCtx); err != nil {
+			log.Printf("manual dashboard refresh: %v", err)
+		}
+		a.renderAndLog()
+		return false
+	case "exit":
+		log.Printf("exit requested from waiting screen")
+		return true
 	default:
 		log.Printf("unsupported action type %q", action.Type)
+		return false
 	}
 }
 
@@ -379,13 +413,37 @@ func usableZone(zone string) bool {
 }
 
 func fallbackDocument(width, height int) *model.Document {
+	margin := 36
+	gap := 18
+	buttonHeight := 76
+	buttonWidth := (width - margin*2 - gap) / 2
+	if buttonWidth < 1 {
+		buttonWidth = 1
+	}
+	buttonY := height/2 + 58
 	return &model.Document{
 		Schema:   model.Schema,
 		Revision: 1,
 		Target:   model.Target{Mode: "portable", Width: width, Height: height, Background: "#ffffff"},
-		Pages: []model.Page{{ID: "waiting", Name: "Waiting", Elements: []model.Element{{
-			ID: "waiting-text", Type: "text", Frame: model.Frame{X: 30, Y: float64(height/2 - 20), Width: float64(width - 60), Height: 40},
-			Style: model.Style{Color: "#111111", FontSize: 22, Align: "center"}, Text: "Waiting for Home Assistant",
-		}}}},
+		Pages: []model.Page{{ID: "waiting", Name: "Waiting", Elements: []model.Element{
+			{
+				ID: "waiting-text", Type: "text", Frame: model.Frame{X: 30, Y: float64(height/2 - 84), Width: float64(width - 60), Height: 44},
+				Style: model.Style{Color: "#111111", FontSize: 22, Align: "center"}, Text: "Waiting for Home Assistant",
+			},
+			{
+				ID: "waiting-hint", Type: "text", Frame: model.Frame{X: 30, Y: float64(height/2 - 24), Width: float64(width - 60), Height: 42},
+				Style: model.Style{Color: "#555555", FontSize: 16, Align: "center"}, Text: "Check connection or refresh configuration",
+			},
+			{
+				ID: "waiting-refresh", Type: "button", Frame: model.Frame{X: float64(margin), Y: float64(buttonY), Width: float64(buttonWidth), Height: float64(buttonHeight)},
+				Style: model.Style{Color: "#ffffff", Fill: "#111111", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 18, Align: "center"}, Text: "Refresh config",
+				Action: &model.Action{Type: "refresh_config"},
+			},
+			{
+				ID: "waiting-exit", Type: "button", Frame: model.Frame{X: float64(margin + buttonWidth + gap), Y: float64(buttonY), Width: float64(buttonWidth), Height: float64(buttonHeight)},
+				Style: model.Style{Color: "#111111", Fill: "#ffffff", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 18, Align: "center"}, Text: "Exit",
+				Action: &model.Action{Type: "exit"},
+			},
+		}}},
 	}
 }

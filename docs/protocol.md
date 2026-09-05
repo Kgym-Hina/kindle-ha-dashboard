@@ -45,6 +45,8 @@
 - `navigate_page`：`page_id` 为本地页面 ID。
 - `call_service`：`domain`、`service`、`service_data` 直接映射到 HA WebSocket `call_service`。
 - `show_message`：`title`、`message` 在 Kindle 上弹出对话框。
+- `refresh_config`：Kindle 内置等待页动作，重新从 Home Assistant 拉取界面配置。
+- `exit`：Kindle 内置等待页动作，退出程序并恢复原生 Kindle 框架。
 
 图片推荐使用编辑器上传产生的 PNG/JPEG/GIF data URL，或使用 Kindle 可访问的 PNG/JPEG/GIF HTTP(S) 地址。Kindle 只会把认证头发送给与 `ha_url` 同源的图片地址。
 

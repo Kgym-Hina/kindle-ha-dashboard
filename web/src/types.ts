@@ -28,7 +28,7 @@ export interface DashboardStyle {
 }
 
 export interface DashboardAction {
-  type: "navigate_page" | "call_service" | "show_message";
+  type: "navigate_page" | "call_service" | "show_message" | "refresh_config" | "exit";
   page_id?: string;
   domain?: string;
   service?: string;

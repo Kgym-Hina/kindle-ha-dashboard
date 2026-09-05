@@ -64,7 +64,7 @@
       "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"enum": ["navigate_page", "call_service", "show_message"]},
+        "type": {"enum": ["navigate_page", "call_service", "show_message", "refresh_config", "exit"]},
         "page_id": {"type": "string"},
         "domain": {"type": "string"},
         "service": {"type": "string"},
@@ -98,4 +98,3 @@
     }
   }
 }
-

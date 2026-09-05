@@ -198,6 +198,8 @@ func validateAction(action *Action) error {
 		if strings.TrimSpace(action.Message) == "" {
 			return errors.New("show_message requires message")
 		}
+	case "refresh_config", "exit":
+		// These actions are reserved for the Kindle fallback page.
 	default:
 		return fmt.Errorf("unsupported type %q", action.Type)
 	}
