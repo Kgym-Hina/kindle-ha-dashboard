@@ -34,7 +34,7 @@ export function InspectorPanel({ element, pages, entities, services, onChange, o
           {element.type === "text" || element.type === "button" ? <label className="field full"><span>文本</span><textarea value={element.text || ""} rows={3} onChange={(event) => patch({ text: event.target.value })} /></label> : null}
           {element.type === "switch" || element.type === "climate" ? <label className="field full"><span>标题</span><input value={element.text || ""} onChange={(event) => patch({ text: event.target.value })} /></label> : null}
           {isImageButton ? <p className="field-help">图片本身就是点击区域，不显示额外文字、填充或边框。</p> : null}
-          {element.type === "text" || element.type === "button" || element.type === "switch" || element.type === "climate" ? <BindingFields element={element} entities={entities} onChange={patch} allowField={element.type === "text" || element.type === "button"} /> : null}
+          {element.type === "text" || element.type === "button" || element.type === "switch" || element.type === "climate" ? <BindingFields element={element} entities={entities} onChange={patch} allowField={element.type === "text" || element.type === "button"} entityDomain={element.type === "switch" || element.type === "climate" ? element.type : undefined} /> : null}
           {element.type === "climate" ? <div className="field-grid"><NumberField label="温度步进" value={element.climate?.temperature_step || 0.5} onChange={(value) => patch({ climate: { ...(element.climate || {}), temperature_step: Math.max(0.1, value) } })} /></div> : null}
           {element.type === "image" || isImageButton ? <ImageFields element={element} onChange={patch} /> : null}
         </section>
@@ -71,9 +71,10 @@ export function InspectorPanel({ element, pages, entities, services, onChange, o
   );
 }
 
-function BindingFields({ element, entities, onChange, allowField }: { element: DashboardElement; entities: EntitySummary[]; onChange: (changes: Partial<DashboardElement>) => void; allowField: boolean }) {
+function BindingFields({ element, entities, onChange, allowField, entityDomain }: { element: DashboardElement; entities: EntitySummary[]; onChange: (changes: Partial<DashboardElement>) => void; allowField: boolean; entityDomain?: "switch" | "climate" }) {
   const binding = element.binding;
   const selectedEntity = entities.find((entity) => entity.entity_id === binding?.entity_id);
+  const availableEntities = entityDomain ? entities.filter((entity) => entity.domain === entityDomain || entity.entity_id === binding?.entity_id) : entities;
   const attributes = selectedEntity?.attribute_names || [];
   const patchBinding = (changes: Partial<DashboardBinding>) => {
     const next = { ...(binding || { entity_id: "" }), ...changes };
@@ -92,7 +93,8 @@ function BindingFields({ element, entities, onChange, allowField }: { element: D
   return (
     <div className="binding-fields">
       <div className="subsection-label">数据绑定</div>
-      <label className="field full"><span>实体</span><select value={binding?.entity_id || ""} onChange={(event) => patchBinding({ entity_id: event.target.value })}><option value="">不绑定</option>{entities.map((entity) => <option key={entity.entity_id} value={entity.entity_id}>{entity.name} · {entity.entity_id}</option>)}</select></label>
+      <label className="field full"><span>{entityDomain === "climate" ? "温控实体" : entityDomain === "switch" ? "开关实体" : "实体"}</span><select value={binding?.entity_id || ""} onChange={(event) => patchBinding({ entity_id: event.target.value })}><option value="">不绑定</option>{availableEntities.map((entity) => <option key={entity.entity_id} value={entity.entity_id}>{entity.name} · {entity.entity_id}</option>)}</select></label>
+      {entityDomain && availableEntities.length === 0 ? <p className="field-help">当前没有可用的 {entityDomain === "climate" ? "climate" : "switch"} 实体。</p> : null}
       {allowField ? <label className="field full"><span>显示字段</span><select value={binding?.field || "state"} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ field: event.target.value })}><option value="state">当前状态</option>{attributes.map((attribute) => <option key={attribute} value={attribute}>{attribute}</option>)}</select></label> : null}
       {allowField ? <div className="field-grid"><label className="field"><span>前缀</span><input value={binding?.prefix || ""} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ prefix: event.target.value })} placeholder="例如 温度 " /></label><label className="field"><span>后缀</span><input value={binding?.suffix || ""} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ suffix: event.target.value })} placeholder="例如 ℃" /></label></div> : null}
       {allowField ? <div className="field-grid binding-bottom"><NumberField label="小数位" value={binding?.decimals ?? 0} onChange={(value) => patchBinding({ decimals: Math.max(0, Math.min(6, Math.round(value))) })} /><button className="inline-action" type="button" disabled={!binding?.entity_id} onClick={insertValue}>插入值</button></div> : <p className="field-help">绑定后会自动读取实体状态，点击组件可执行内置控制。</p>}
