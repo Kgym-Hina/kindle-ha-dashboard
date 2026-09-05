@@ -1,0 +1,59 @@
+{
+  "schema": "kindle-dashboard/v1",
+  "revision": 1,
+  "updated_at": "2026-09-05T00:00:00Z",
+  "target": {
+    "mode": "portable",
+    "zone_id": null,
+    "width": 600,
+    "height": 800,
+    "background": "#ffffff"
+  },
+  "pages": [
+    {
+      "id": "home",
+      "name": "Home",
+      "background": "#ffffff",
+      "elements": [
+        {
+          "id": "title",
+          "type": "text",
+          "frame": {"x": 36, "y": 32, "width": 528, "height": 46},
+          "style": {"color": "#111111", "font_size": 28, "font_weight": "bold", "align": "left"},
+          "text": "Home Assistant"
+        },
+        {
+          "id": "rule",
+          "type": "line",
+          "frame": {"x": 36, "y": 92, "width": 528, "height": 2},
+          "style": {"stroke": "#111111", "border_width": 2}
+        },
+        {
+          "id": "turn-on",
+          "type": "button",
+          "frame": {"x": 36, "y": 132, "width": 250, "height": 74},
+          "style": {"fill": "#111111", "stroke": "#111111", "color": "#ffffff", "border_width": 2, "radius": 12, "font_size": 22, "font_weight": "bold", "align": "center"},
+          "text": "Light on",
+          "action": {"type": "call_service", "domain": "light", "service": "turn_on", "service_data": {"entity_id": "light.example"}}
+        },
+        {
+          "id": "turn-off",
+          "type": "button",
+          "frame": {"x": 314, "y": 132, "width": 250, "height": 74},
+          "style": {"fill": "#ffffff", "stroke": "#111111", "color": "#111111", "border_width": 2, "radius": 12, "font_size": 22, "font_weight": "bold", "align": "center"},
+          "text": "Light off",
+          "action": {"type": "call_service", "domain": "light", "service": "turn_off", "service_data": {"entity_id": "light.example"}}
+        },
+        {
+          "id": "message",
+          "type": "button",
+          "frame": {"x": 36, "y": 238, "width": 528, "height": 70},
+          "style": {"fill": "#ffffff", "stroke": "#555555", "color": "#111111", "border_width": 2, "radius": 12, "font_size": 20, "align": "center"},
+          "text": "Show message",
+          "action": {"type": "show_message", "title": "Kindle", "message": "This message was defined in the dashboard JSON.", "timeout_ms": 8000}
+        }
+      ]
+    }
+  ]
+}
+

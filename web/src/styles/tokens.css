@@ -1,0 +1,24 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1c2321;
+  background: #f3f0e8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #1c2321;
+  --muted: #727873;
+  --soft: #969b93;
+  --paper: #fffdf8;
+  --canvas: #ffffff;
+  --line: #dedbd2;
+  --line-strong: #c4c1b8;
+  --sage: #dce9df;
+  --sage-strong: #54705e;
+  --coral: #ef715a;
+  --shadow: 0 18px 44px rgba(45, 43, 34, .09);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 1080px; min-height: 100vh; background: radial-gradient(circle at 75% 0%, #fbf8f0 0, #f3f0e8 48%, #eeece4 100%); }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+

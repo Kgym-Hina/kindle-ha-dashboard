@@ -1,0 +1,8 @@
+# 将下面的 action 放进任意 automation/script，即可从 HA 事件总线推送到 Kindle。
+- event: kindle_dashboard_message
+  event_data:
+    target_device_id: kindle-bedroom
+    title: "提醒"
+    message: "请关闭窗户"
+    timeout_ms: 10000
+

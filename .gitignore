@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+node_modules/
+web/dist/
+ha-addon/server/dist/
+ha-addon/server/public/
+kindle/bin/
+kindle/dist/work/
+esp32/build/
+esp32/sdkconfig
+esp32/sdkconfig.old
+mechanical/generated/*.bak
+mechanical/generated/*.FCBak
+/data/

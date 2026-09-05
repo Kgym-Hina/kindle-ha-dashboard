@@ -1,0 +1,10 @@
+.git
+.DS_Store
+web/node_modules
+web/dist
+ha-addon/server/node_modules
+ha-addon/server/dist
+kindle/dist
+esp32/build
+mechanical/generated
+

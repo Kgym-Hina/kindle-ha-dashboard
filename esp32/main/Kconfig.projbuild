@@ -1,0 +1,90 @@
+menu "Kindle Location Bridge"
+
+config KD_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config KD_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+config KD_HA_URL
+    string "Home Assistant URL"
+    default "http://homeassistant.local:8123"
+
+config KD_HA_TOKEN
+    string "Home Assistant long-lived access token"
+    default ""
+
+config KD_DEVICE_ID
+    string "Kindle device ID"
+    default "kindle-bedroom"
+
+config KD_ADC_GPIO
+    int "ADC GPIO (board wiring label)"
+    default 4
+    range 0 39
+
+config KD_ADC_CHANNEL
+    int "ADC1 channel"
+    default 0
+    range 0 9
+
+config KD_PULLUP_OHMS
+    int "Fixed pull-up resistor (ohms)"
+    default 10000
+    range 100 1000000
+
+config KD_VCC_MV
+    int "ADC reference supply (mV)"
+    default 3300
+    range 1000 5000
+
+config KD_REPORT_INTERVAL_SEC
+    int "Report interval (seconds)"
+    default 30
+    range 5 3600
+
+config KD_ZONE_1_ID
+    string "Zone 1 ID"
+    default "living_room"
+
+config KD_ZONE_1_MIN_OHMS
+    int "Zone 1 minimum resistance"
+    default 8500
+    range 0 100000000
+
+config KD_ZONE_1_MAX_OHMS
+    int "Zone 1 maximum resistance"
+    default 11500
+    range 1 100000000
+
+config KD_ZONE_2_ID
+    string "Zone 2 ID"
+    default "bedroom"
+
+config KD_ZONE_2_MIN_OHMS
+    int "Zone 2 minimum resistance"
+    default 18000
+    range 0 100000000
+
+config KD_ZONE_2_MAX_OHMS
+    int "Zone 2 maximum resistance"
+    default 22000
+    range 1 100000000
+
+config KD_ZONE_3_ID
+    string "Zone 3 ID"
+    default "kitchen"
+
+config KD_ZONE_3_MIN_OHMS
+    int "Zone 3 minimum resistance"
+    default 38000
+    range 0 100000000
+
+config KD_ZONE_3_MAX_OHMS
+    int "Zone 3 maximum resistance"
+    default 45000
+    range 1 100000000
+
+endmenu

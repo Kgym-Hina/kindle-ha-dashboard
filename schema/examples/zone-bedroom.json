@@ -1,0 +1,45 @@
+{
+  "schema": "kindle-dashboard/v1",
+  "revision": 1,
+  "updated_at": "2026-09-05T00:00:00Z",
+  "target": {
+    "mode": "zone",
+    "zone_id": "bedroom",
+    "width": 600,
+    "height": 800,
+    "background": "#ffffff"
+  },
+  "pages": [
+    {
+      "id": "bedroom",
+      "name": "Bedroom",
+      "background": "#ffffff",
+      "elements": [
+        {
+          "id": "bedroom-title",
+          "type": "text",
+          "frame": {"x": 36, "y": 34, "width": 528, "height": 44},
+          "style": {"color": "#111111", "font_size": 28, "font_weight": "bold", "align": "left"},
+          "text": "Bedroom"
+        },
+        {
+          "id": "bedside-lamp",
+          "type": "image_button",
+          "frame": {"x": 36, "y": 132, "width": 250, "height": 190},
+          "style": {"fill": "#ffffff", "stroke": "#111111", "color": "#111111", "border_width": 2, "radius": 14, "font_size": 18, "align": "center"},
+          "image": {"src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "fit": "contain"},
+          "text": "Bedside lamp",
+          "action": {"type": "call_service", "domain": "light", "service": "toggle", "service_data": {"entity_id": "light.bedside_lamp"}}
+        },
+        {
+          "id": "good-night",
+          "type": "button",
+          "frame": {"x": 314, "y": 132, "width": 250, "height": 190},
+          "style": {"fill": "#111111", "stroke": "#111111", "color": "#ffffff", "border_width": 2, "radius": 14, "font_size": 22, "font_weight": "bold", "align": "center"},
+          "text": "Good night",
+          "action": {"type": "call_service", "domain": "scene", "service": "turn_on", "service_data": {"entity_id": "scene.good_night"}}
+        }
+      ]
+    }
+  ]
+}

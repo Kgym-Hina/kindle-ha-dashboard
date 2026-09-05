@@ -1,0 +1,18 @@
+{
+  "ha_url": "http://homeassistant.local:8123",
+  "long_lived_token": "paste-your-home-assistant-long-lived-access-token",
+  "device_id": "kindle-bedroom",
+  "portable_entity": "sensor.kindle_dashboard_portable",
+  "zone_entity_prefix": "sensor.kindle_dashboard_zone_",
+  "location_entity": "sensor.kindle_bedroom_location",
+  "battery_entity": "sensor.kindle_bedroom_battery",
+  "input_device": "/dev/input/event1",
+  "touch_width": 599,
+  "touch_height": 799,
+  "display_width": 600,
+  "display_height": 800,
+  "battery_interval_seconds": 300,
+  "temp_dir": "/var/tmp/kindle-ha-dashboard",
+  "font_path": ""
+}
+

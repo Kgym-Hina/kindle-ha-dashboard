@@ -1,0 +1,143 @@
+"""Generate the parametric Kindle + ESP32 case.
+
+Open this file from FreeCAD, or run it with FreeCADCmd. All dimensions are
+read from parameters.json and are expressed in millimetres.
+"""
+
+import json
+import os
+
+import FreeCAD as App
+import Part
+
+
+def _macro_directory():
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        return os.path.dirname(os.path.abspath(App.getResourceDir()))
+
+
+def load_parameters():
+    path = os.path.join(_macro_directory(), "parameters.json")
+    with open(path, "r", encoding="utf-8") as parameter_file:
+        return json.load(parameter_file)
+
+
+def rounded_box(width, height, depth, radius, z=0):
+    shape = Part.makeBox(width, height, depth, App.Vector(0, 0, z))
+    if radius <= 0:
+        return shape
+    vertical_edges = [edge for edge in shape.Edges if abs((edge.Vertexes[-1].Point - edge.Vertexes[0].Point).z) > depth * 0.9]
+    try:
+        return shape.makeFillet(radius, vertical_edges)
+    except Exception:
+        return shape
+
+
+def add_feature(document, name, label, shape, properties):
+    feature = document.addObject("PartDesign::Feature", name)
+    feature.Label = label
+    feature.Shape = shape
+    for key, value in properties.items():
+        feature.addProperty("App::PropertyString", key, "Parameters")
+        setattr(feature, key, str(value))
+    return feature
+
+
+def set_visibility(feature, visible):
+    feature.Visibility = visible
+
+
+def build_case():
+    p = load_parameters()
+    width = p["device_width"] + 2 * p["clearance"]
+    height = p["device_height"] + 2 * p["clearance"]
+    depth = p["device_thickness"] + p["clearance"]
+    wall = p["wall"]
+    back = p["back_thickness"]
+    front_lip = p["front_lip"]
+    outer = rounded_box(width, height, depth, p["device_corner_radius"])
+    inner = rounded_box(width - 2 * wall, height - 2 * wall, depth - back - front_lip, max(p["device_corner_radius"] - wall, 0), back)
+    shell = outer.cut(inner)
+
+    screen = Part.makeBox(p["screen_width"], p["screen_height"], wall * 3, App.Vector(
+        p["screen_margin_left"] + p["clearance"],
+        p["screen_margin_top"] + p["clearance"],
+        depth - wall * 1.2,
+    ))
+    shell = shell.cut(screen)
+
+    micro_opening = Part.makeBox(
+        p["micro_cable_width"], wall * 3, p["micro_cable_height"],
+        App.Vector(p["micro_cable_x"], -wall, p["micro_cable_y"] + back / 2),
+    )
+    shell = shell.cut(micro_opening)
+
+    pocket = Part.makeBox(
+        p["esp32_board_width"] + 2 * p["clearance"],
+        p["esp32_board_height"] + 2 * p["clearance"],
+        p["esp32_pocket_depth"],
+        App.Vector(p["esp32_pocket_x"], p["esp32_pocket_y"], -0.01),
+    )
+    shell = shell.cut(pocket)
+
+    pogo_holes = None
+    pogo_radius = p["pogo_pin_diameter"] / 2 + p["pogo_channel_clearance"]
+    center_x = p["pogo_pin_x"]
+    for index in range(int(p["pogo_pin_count"])):
+        pin_x = center_x + (index - (p["pogo_pin_count"] - 1) / 2) * p["pogo_pin_pitch"]
+        hole = Part.makeCylinder(pogo_radius, back + 1, App.Vector(pin_x, p["pogo_pin_y"], -0.1))
+        pogo_holes = hole if pogo_holes is None else pogo_holes.fuse(hole)
+    shell = shell.cut(pogo_holes)
+
+    document = App.newDocument("Kindle_HA_Dashboard_Case")
+    case_shell = add_feature(document, "CaseShell", "Kindle case shell", shell, {
+        "DeviceWidth": p["device_width"], "DeviceHeight": p["device_height"], "DeviceThickness": p["device_thickness"],
+        "FrontLip": p["front_lip"],
+    })
+    micro_feature = add_feature(document, "MicroCableOpening", "Bottom micro cable opening", micro_opening, {
+        "OpeningWidth": p["micro_cable_width"], "OpeningHeight": p["micro_cable_height"],
+    })
+    pocket_feature = add_feature(document, "ESP32Pocket", "Rear ESP32 recessed pocket", pocket, {
+        "BoardWidth": p["esp32_board_width"], "BoardHeight": p["esp32_board_height"], "PocketDepth": p["esp32_pocket_depth"],
+    })
+    pogo_feature = add_feature(document, "PogoPinChannels", "Pogo pin through channels", pogo_holes, {
+        "PinCount": p["pogo_pin_count"], "Pitch": p["pogo_pin_pitch"], "Diameter": p["pogo_pin_diameter"],
+    })
+
+    post_shapes = []
+    for x, y in [
+        (p["mount_post_inset"], p["mount_post_inset"]),
+        (width - p["mount_post_inset"], p["mount_post_inset"]),
+        (p["mount_post_inset"], height - p["mount_post_inset"]),
+        (width - p["mount_post_inset"], height - p["mount_post_inset"]),
+    ]:
+        post = Part.makeCylinder(p["mount_post_diameter"] / 2, p["mount_post_height"], App.Vector(x, y, back))
+        hole = Part.makeCylinder(p["mount_hole_diameter"] / 2, p["mount_post_height"] + 0.2, App.Vector(x, y, back - 0.1))
+        post_shapes.append(post.cut(hole))
+    posts = post_shapes[0]
+    for post in post_shapes[1:]:
+        posts = posts.fuse(post)
+    mounting_posts = add_feature(document, "MountingPosts", "Cover mounting posts", posts, {
+        "PostDiameter": p["mount_post_diameter"], "HoleDiameter": p["mount_hole_diameter"],
+    })
+
+    set_visibility(case_shell, True)
+    set_visibility(micro_feature, False)
+    set_visibility(pocket_feature, False)
+    set_visibility(pogo_feature, False)
+    set_visibility(mounting_posts, True)
+
+    document.recompute()
+    output_dir = os.path.join(_macro_directory(), "generated")
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
+    output_path = os.path.join(output_dir, "kindle-ha-dashboard-case.FCStd")
+    document.recompute()
+    document.saveAs(output_path)
+    return output_path
+
+
+if __name__ == "__main__":
+    print(build_case())

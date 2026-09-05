@@ -1,0 +1,22 @@
+name: Kindle release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  kindle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kindle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - run: sudo apt-get update && sudo apt-get install -y zip
+      - run: ./build_kual_package.sh
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: kindle/dist/kindle-ha-dashboard.zip

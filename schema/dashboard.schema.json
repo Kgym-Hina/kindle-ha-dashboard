@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/kindle-dashboard/v1/schema.json",
+  "title": "Kindle HA Dashboard",
+  "type": "object",
+  "required": ["schema", "revision", "target", "pages"],
+  "properties": {
+    "schema": {"const": "kindle-dashboard/v1"},
+    "revision": {"type": "integer", "minimum": 1},
+    "updated_at": {"type": "string"},
+    "target": {"$ref": "#/$defs/target"},
+    "pages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/page"}}
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "required": ["mode", "width", "height", "background"],
+      "properties": {
+        "mode": {"enum": ["portable", "zone"]},
+        "zone_id": {"type": ["string", "null"]},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "background": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "required": ["id", "name", "elements"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string"},
+        "background": {"type": "string"},
+        "elements": {"type": "array", "items": {"$ref": "#/$defs/element"}}
+      },
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "color": {"type": "string"},
+        "fill": {"type": "string"},
+        "stroke": {"type": "string"},
+        "border_width": {"type": "number", "minimum": 0},
+        "radius": {"type": "number", "minimum": 0},
+        "font_size": {"type": "number", "exclusiveMinimum": 0},
+        "font_weight": {"enum": ["normal", "bold"]},
+        "align": {"enum": ["left", "center", "right"]}
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["navigate_page", "call_service", "show_message"]},
+        "page_id": {"type": "string"},
+        "domain": {"type": "string"},
+        "service": {"type": "string"},
+        "service_data": {"type": "object"},
+        "title": {"type": "string"},
+        "message": {"type": "string"},
+        "timeout_ms": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "element": {
+      "type": "object",
+      "required": ["id", "type", "frame"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["text", "button", "image_button", "image", "rect", "line"]},
+        "frame": {"$ref": "#/$defs/frame"},
+        "style": {"$ref": "#/$defs/style"},
+        "text": {"type": "string"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "src": {"type": "string"},
+            "fit": {"enum": ["contain", "cover", "stretch"]}
+          },
+          "required": ["src"]
+        },
+        "action": {"$ref": "#/$defs/action"}
+      },
+      "additionalProperties": true
+    }
+  }
+}
+
