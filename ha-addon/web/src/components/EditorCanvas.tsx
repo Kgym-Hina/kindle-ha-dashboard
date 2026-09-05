@@ -105,7 +105,7 @@ function CanvasElement({ element, selected, onSelect, onStartDrag }: CanvasEleme
     >
       {element.type === "line" ? <span className="line-visual" style={{ background: style.stroke || style.color || "#171717", height: style.border_width || 2 }} /> : null}
       {element.type === "image" || element.type === "image_button" ? (
-        element.image?.src ? <img src={element.image.src} alt="" style={{ objectFit: element.image.fit || "contain" }} /> : <span className="empty-image">未设置图片</span>
+        element.image?.src ? <img src={element.image.src} alt="" style={{ objectFit: element.image.fit === "stretch" ? "fill" : element.image.fit || "contain" }} /> : <span className="empty-image">未设置图片</span>
       ) : null}
       {element.type === "text" || element.type === "button" || element.type === "image_button" ? <span className="element-text">{element.text}</span> : null}
       {selected ? <span className="resize-handle" aria-hidden="true" /> : null}
