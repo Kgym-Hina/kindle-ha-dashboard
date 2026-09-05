@@ -4,6 +4,7 @@
 
 - [ ] Add-on 启动后 `/api/health` 返回 `ok: true`。
 - [ ] 编辑器读取 Home Assistant Area Registry 房间，选择 portable 或房间后能加载对应文档。
+- [ ] 实体字段使用带域图标的对话框，可按名称/实体 ID 搜索，并按类型和房间筛选、分组。
 - [ ] 发布后 HA 中对应 `sensor.kindle_dashboard_*` 的 `attributes.document` 是完整 JSON。
 - [ ] Kindle 启动日志显示 WebSocket 鉴权成功，并能在文档更新后重绘。
 - [ ] Kindle 触摸按钮可以调用指定 HA 服务或切换本地页面。

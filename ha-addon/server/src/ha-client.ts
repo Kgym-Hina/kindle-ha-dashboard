@@ -12,6 +12,11 @@ interface HAArea {
   name: string;
 }
 
+interface HAEntityRegistryEntry {
+  entity_id: string;
+  area_id?: string | null;
+}
+
 interface HAWebSocketMessage {
   type?: string;
   id?: number;
@@ -49,16 +54,28 @@ export class HomeAssistantClient {
   }
 
   async listEntities(): Promise<EntitySummary[]> {
-    const states = await this.getStates();
+    const [states, registryEntries, areas] = await Promise.all([
+      this.getStates(),
+      this.listEntityRegistry().catch(() => []),
+      this.listAreas().catch(() => [])
+    ]);
+    const registryByEntity = new Map(registryEntries.map((entry) => [entry.entity_id, entry]));
+    const areaNames = new Map(areas.map((area) => [area.area_id, area.name]));
     return states
       .filter((state) => !state.entity_id.startsWith("sensor.kindle_dashboard_"))
-      .map((state) => ({
-        entity_id: state.entity_id,
-        state: state.state,
-        name: stringValue(state.attributes.friendly_name) || state.entity_id,
-        domain: state.entity_id.split(".", 1)[0],
-        attribute_names: Object.keys(state.attributes).filter((key) => key !== "friendly_name").sort()
-      }))
+      .map((state) => {
+        const registryEntry = registryByEntity.get(state.entity_id);
+        const areaId = registryEntry?.area_id || null;
+        return {
+          entity_id: state.entity_id,
+          state: state.state,
+          name: stringValue(state.attributes.friendly_name) || state.entity_id,
+          domain: state.entity_id.split(".", 1)[0],
+          attribute_names: Object.keys(state.attributes).filter((key) => key !== "friendly_name").sort(),
+          area_id: areaId,
+          area_name: areaId ? areaNames.get(areaId) || null : null
+        };
+      })
       .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
   }
 
@@ -116,24 +133,32 @@ export class HomeAssistantClient {
   }
 
   private async listAreas(): Promise<HAArea[]> {
+    return this.listWebSocketCollection("config/area_registry/list", isArea, "area");
+  }
+
+  private async listEntityRegistry(): Promise<HAEntityRegistryEntry[]> {
+    return this.listWebSocketCollection("config/entity_registry/list", isEntityRegistryEntry, "entity");
+  }
+
+  private async listWebSocketCollection<T>(commandType: string, isItem: (value: unknown) => value is T, label: string): Promise<T[]> {
     const settings = await readSettings();
     const baseUrl = resolveBaseUrl(settings.ha_url);
     const token = resolveToken(settings.ha_token);
     if (!token) throw new Error("Home Assistant token is not configured");
     const websocketUrl = toWebSocketUrl(`${baseUrl}/api/websocket`);
     const commandId = 1;
-    return new Promise<HAArea[]>((resolve, reject) => {
+    return new Promise<T[]>((resolve, reject) => {
       const socket = new WebSocket(websocketUrl);
       let settled = false;
-      const timeout = setTimeout(() => finish(new Error("Home Assistant area request timed out")), 8000);
-      const finish = (error?: Error, areas: HAArea[] = []) => {
+      const finish = (error?: Error, items: T[] = []) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
         try { socket.close(); } catch { /* socket may already be closed */ }
         if (error) reject(error);
-        else resolve(areas);
+        else resolve(items);
       };
+      const timeout = setTimeout(() => finish(new Error("Home Assistant " + label + " request timed out")), 8000);
       const send = (message: Record<string, unknown>) => socket.send(JSON.stringify(message));
       socket.addEventListener("message", (event) => {
         let message: HAWebSocketMessage;
@@ -157,23 +182,23 @@ export class HomeAssistantClient {
         }
         if (message.type === "auth_ok") {
           try {
-            send({ id: commandId, type: "config/area_registry/list" });
+            send({ id: commandId, type: commandType });
           } catch {
-            finish(new Error("Home Assistant area request could not be sent"));
+            finish(new Error("Home Assistant " + label + " request could not be sent"));
           }
           return;
         }
         if (message.type !== "result" || message.id !== commandId) return;
         if (!message.success) {
-          finish(new Error(`Home Assistant area request failed: ${JSON.stringify(message.error)}`));
+          finish(new Error("Home Assistant " + label + " request failed: " + JSON.stringify(message.error)));
           return;
         }
-        const areas = Array.isArray(message.result) ? message.result.filter(isArea) : [];
-        finish(undefined, areas);
+        const items = Array.isArray(message.result) ? message.result.filter(isItem) : [];
+        finish(undefined, items);
       });
       socket.addEventListener("error", () => finish(new Error("Home Assistant WebSocket connection failed")));
       socket.addEventListener("close", () => {
-        if (!settled) finish(new Error("Home Assistant WebSocket closed before returning areas"));
+        if (!settled) finish(new Error("Home Assistant " + label + " WebSocket closed before returning data"));
       });
       socket.addEventListener("open", () => {
         // Home Assistant sends auth_required after the connection opens.
@@ -224,6 +249,12 @@ function isObject(value: unknown): value is Record<string, any> {
 
 function isArea(value: unknown): value is HAArea {
   return isObject(value) && typeof value.area_id === "string" && value.area_id.trim().length > 0 && typeof value.name === "string";
+}
+
+function isEntityRegistryEntry(value: unknown): value is HAEntityRegistryEntry {
+  return isObject(value)
+    && typeof value.entity_id === "string"
+    && (value.area_id === undefined || value.area_id === null || typeof value.area_id === "string");
 }
 
 function slug(value: string): string {

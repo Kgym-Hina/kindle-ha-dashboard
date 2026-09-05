@@ -1,6 +1,6 @@
 # Kindle HA Dashboard
 
-一个面向 Kindle KT2 Basic 的 Home Assistant 电子墨水控制面板。Kindle 只负责从 Home Assistant 订阅界面 JSON、在本地渲染和处理触摸；界面编辑、数据保存和 HA 管理集中在 Home Assistant Add-on 中。设计器支持实体绑定、开关/温控组件、嵌套页面、可缩放布局、对齐和图层排序。
+一个面向 Kindle KT2 Basic 的 Home Assistant 电子墨水控制面板。Kindle 只负责从 Home Assistant 订阅界面 JSON、在本地渲染和处理触摸；界面编辑、数据保存和 HA 管理集中在 Home Assistant Add-on 中。设计器支持实体绑定、可搜索的房间分组实体选择器、开关/温控组件、嵌套页面、可缩放布局、对齐和图层排序。
 
 项目参考了 [`Kgym-Hina/kindle_renderer`](https://github.com/Kgym-Hina/kindle_renderer) 的 KUAL 启动方式和 Kindle 端 Go 实现，但把图片轮播升级成了可交互的 JSON 界面协议。
 

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ChangeEvent } from "react";
+import { EntityPicker } from "./EntityPicker";
 import type { DashboardAction, DashboardBinding, DashboardElement, DashboardFrame, DashboardPage, DashboardStyle, EntitySummary, ServiceField, ServiceInfo } from "../types";
 
 interface InspectorPanelProps {
@@ -93,7 +94,7 @@ function BindingFields({ element, entities, onChange, allowField, entityDomain }
   return (
     <div className="binding-fields">
       <div className="subsection-label">数据绑定</div>
-      <label className="field full"><span>{entityDomain === "climate" ? "温控实体" : entityDomain === "switch" ? "开关实体" : "实体"}</span><select value={binding?.entity_id || ""} onChange={(event) => patchBinding({ entity_id: event.target.value })}><option value="">不绑定</option>{availableEntities.map((entity) => <option key={entity.entity_id} value={entity.entity_id}>{entity.name} · {entity.entity_id}</option>)}</select></label>
+      <div className="field full"><span>{entityDomain === "climate" ? "温控实体" : entityDomain === "switch" ? "开关实体" : "实体"}</span><EntityPicker entities={entities} allowedDomains={entityDomain ? [entityDomain] : undefined} value={binding?.entity_id || ""} onChange={(entityId) => patchBinding({ entity_id: entityId })} placeholder={entityDomain === "climate" ? "选择温控实体" : entityDomain === "switch" ? "选择开关实体" : "选择实体"} /></div>
       {entityDomain && availableEntities.length === 0 ? <p className="field-help">当前没有可用的 {entityDomain === "climate" ? "climate" : "switch"} 实体。</p> : null}
       {allowField ? <label className="field full"><span>显示字段</span><select value={binding?.field || "state"} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ field: event.target.value })}><option value="state">当前状态</option>{attributes.map((attribute) => <option key={attribute} value={attribute}>{attribute}</option>)}</select></label> : null}
       {allowField ? <div className="field-grid"><label className="field"><span>前缀</span><input value={binding?.prefix || ""} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ prefix: event.target.value })} placeholder="例如 温度 " /></label><label className="field"><span>后缀</span><input value={binding?.suffix || ""} disabled={!binding?.entity_id} onChange={(event) => patchBinding({ suffix: event.target.value })} placeholder="例如 ℃" /></label></div> : null}
@@ -192,11 +193,11 @@ function ServiceFieldControl({ name, field, value, entities, onChange }: { name:
   const label = (field.name || humanize(name)) + (field.required ? " *" : "");
   if (entitySelector) {
     const rawDomains = entitySelector.domain;
-    const domains = Array.isArray(rawDomains) ? rawDomains.filter((item): item is string => typeof item === "string") : [];
+    const domains = Array.isArray(rawDomains) ? rawDomains.filter((item): item is string => typeof item === "string") : typeof rawDomains === "string" ? [rawDomains] : [];
     const available = domains.length ? entities.filter((entity) => domains.includes(entity.domain)) : entities;
     const current = typeof currentValue === "string" ? currentValue : "";
     const hasCurrent = available.some((entity) => entity.entity_id === current);
-    return <div className="service-field"><label className="field"><span>{label}</span>{available.length > 0 && (!current || hasCurrent) ? <select value={current} onChange={(event) => onChange(event.target.value)}><option value="">选择实体</option>{available.map((entity) => <option key={entity.entity_id} value={entity.entity_id}>{entity.name} · {entity.entity_id}</option>)}</select> : <input value={current} onChange={(event) => onChange(event.target.value)} placeholder="输入实体 ID" />}</label>{field.description ? <small>{field.description}</small> : null}</div>;
+    return <div className="service-field"><div className="field"><span>{label}</span>{available.length > 0 && (!current || hasCurrent) ? <EntityPicker entities={entities} allowedDomains={domains.length ? domains : undefined} value={current} onChange={onChange} placeholder="选择实体" /> : <input value={current} onChange={(event) => onChange(event.target.value)} placeholder="输入实体 ID" />}</div>{field.description ? <small>{field.description}</small> : null}</div>;
   }
   const booleanSelector = selector.boolean !== undefined;
   if (booleanSelector) {

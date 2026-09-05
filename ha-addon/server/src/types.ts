@@ -100,6 +100,8 @@ export interface EntitySummary {
   name: string;
   domain: string;
   attribute_names: string[];
+  area_id?: string | null;
+  area_name?: string | null;
 }
 
 export interface ServiceField {
