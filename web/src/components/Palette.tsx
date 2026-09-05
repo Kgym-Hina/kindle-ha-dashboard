@@ -7,10 +7,12 @@ interface PaletteProps {
 const tools: Array<{ type: DashboardElement["type"]; label: string; icon: string; description: string }> = [
   { type: "text", label: "文本", icon: "T", description: "标题与说明" },
   { type: "button", label: "按钮", icon: "↗", description: "文字交互" },
-  { type: "image_button", label: "图片按钮", icon: "▧", description: "图片交互" },
+  { type: "image_button", label: "图片按钮", icon: "▧", description: "图片本身可点击" },
   { type: "image", label: "图片", icon: "▨", description: "导入图像" },
   { type: "rect", label: "卡片", icon: "□", description: "背景容器" },
-  { type: "line", label: "分隔线", icon: "—", description: "视觉分组" }
+  { type: "line", label: "分隔线", icon: "—", description: "视觉分组" },
+  { type: "switch", label: "开关", icon: "◉", description: "绑定开关实体" },
+  { type: "climate", label: "温控", icon: "℃", description: "温度与模式控制" }
 ];
 
 export function Palette({ onAdd }: PaletteProps) {

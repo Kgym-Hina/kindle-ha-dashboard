@@ -1,5 +1,5 @@
 import { readSettings } from "./config.js";
-import type { DashboardDocument, EntitySummary, KindleMessage, ZoneInfo } from "./types.js";
+import type { DashboardDocument, EntitySummary, KindleMessage, ServiceInfo, ZoneInfo } from "./types.js";
 
 interface HAState {
   entity_id: string;
@@ -44,9 +44,31 @@ export class HomeAssistantClient {
         entity_id: state.entity_id,
         state: state.state,
         name: stringValue(state.attributes.friendly_name) || state.entity_id,
-        domain: state.entity_id.split(".", 1)[0]
+        domain: state.entity_id.split(".", 1)[0],
+        attribute_names: Object.keys(state.attributes).filter((key) => key !== "friendly_name").sort()
       }))
       .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+  }
+
+  async listServices(): Promise<ServiceInfo[]> {
+    const response = await this.request("/api/services", { method: "GET" });
+    const raw = await response.json() as unknown;
+    if (!Array.isArray(raw)) return [];
+    const services: ServiceInfo[] = [];
+    for (const domainEntry of raw) {
+      if (!isObject(domainEntry) || typeof domainEntry.domain !== "string" || !isObject(domainEntry.services)) continue;
+      for (const [service, description] of Object.entries(domainEntry.services)) {
+        const detail = isObject(description) ? description : {};
+        services.push({
+          domain: domainEntry.domain,
+          service,
+          name: stringValue(detail.name),
+          description: stringValue(detail.description),
+          fields: isObject(detail.fields) ? detail.fields as ServiceInfo["fields"] : {}
+        });
+      }
+    }
+    return services.sort((a, b) => `${a.domain}.${a.service}`.localeCompare(`${b.domain}.${b.service}`));
   }
 
   async publish(document: DashboardDocument): Promise<string> {
@@ -112,6 +134,10 @@ function resolveToken(configuredToken?: string): string | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function slug(value: string): string {

@@ -36,6 +36,14 @@ type Dialog struct {
 	ExpiresAt int64
 }
 
+const NavigationBarHeight = 72
+
+type Navigation struct {
+	Show       bool
+	CanGoBack  bool
+	IsSettings bool
+}
+
 type Renderer struct {
 	HTTPClient   *http.Client
 	HAURL        string
@@ -49,7 +57,7 @@ type Renderer struct {
 	boldFont        *opentype.Font
 }
 
-func (r *Renderer) Render(document *model.Document, pageIndex int, dialog *Dialog) (*image.Gray, error) {
+func (r *Renderer) Render(document *model.Document, pageIndex int, dialog *Dialog, navigation Navigation, states map[string]model.EntityState) (*image.Gray, error) {
 	if document == nil {
 		return nil, errors.New("cannot render a nil document")
 	}
@@ -61,9 +69,12 @@ func (r *Renderer) Render(document *model.Document, pageIndex int, dialog *Dialo
 		fill(canvas, parseColor(page.Background, parseColor(document.Target.Background, color.White)))
 	}
 	for _, element := range page.Elements {
-		if err := r.drawElement(canvas, element); err != nil {
+		if err := r.drawElement(canvas, element, states); err != nil {
 			return nil, fmt.Errorf("render element %s: %w", element.ID, err)
 		}
+	}
+	if navigation.Show {
+		r.drawNavigation(canvas, navigation)
 	}
 	if dialog != nil {
 		r.drawDialog(canvas, *dialog)
@@ -71,7 +82,7 @@ func (r *Renderer) Render(document *model.Document, pageIndex int, dialog *Dialo
 	return canvas, nil
 }
 
-func (r *Renderer) drawElement(canvas *image.Gray, element model.Element) error {
+func (r *Renderer) drawElement(canvas *image.Gray, element model.Element, states map[string]model.EntityState) error {
 	frame := rectFromFrame(element.Frame, canvas.Bounds())
 	style := element.Style
 	fillColor := parseColor(style.Fill, color.Transparent)
@@ -88,13 +99,17 @@ func (r *Renderer) drawElement(canvas *image.Gray, element model.Element) error 
 	case "line":
 		drawLine(canvas, frame, strokeColor, lineWidth)
 	case "text":
-		r.drawTextBox(canvas, element.Text, frame, style)
+		r.drawTextBox(canvas, resolveElementText(element, states), frame, style)
 	case "button":
 		if fillColor != color.Transparent {
 			fillRounded(canvas, frame, fillColor, maxInt(int(style.Radius), 0))
 		}
 		strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), lineWidth)
-		r.drawTextBox(canvas, element.Text, frame, style)
+		r.drawTextBox(canvas, resolveElementText(element, states), frame, style)
+	case "switch":
+		r.drawSwitch(canvas, frame, element, states)
+	case "climate":
+		r.drawClimate(canvas, frame, element, states)
 	case "image", "image_button":
 		if element.Image == nil || strings.TrimSpace(element.Image.Src) == "" {
 			return errors.New("image element is missing image.src")
@@ -104,12 +119,6 @@ func (r *Renderer) drawElement(canvas *image.Gray, element model.Element) error 
 			return err
 		}
 		drawImage(canvas, frame, asset, element.Image.Fit)
-		if element.Type == "image_button" {
-			strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), lineWidth)
-			if element.Text != "" {
-				r.drawTextBox(canvas, element.Text, frame, style)
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported type %q", element.Type)
 	}
@@ -150,6 +159,157 @@ func (r *Renderer) drawTextBox(canvas *image.Gray, value string, frame image.Rec
 		drawer := &font.Drawer{Dst: canvas, Src: image.NewUniform(fontColor), Face: face, Dot: fixed.P(x, y)}
 		drawer.DrawString(line)
 		y += lineHeight
+	}
+}
+
+func resolveElementText(element model.Element, states map[string]model.EntityState) string {
+	if element.Binding == nil {
+		return element.Text
+	}
+	value := resolveBindingValue(element.Binding, states)
+	if strings.Contains(element.Text, "{value}") {
+		return strings.ReplaceAll(element.Text, "{value}", value)
+	}
+	if strings.TrimSpace(element.Text) == "" || element.Text == "新文本" {
+		return value
+	}
+	return element.Text + value
+}
+
+func resolveBindingValue(binding *model.Binding, states map[string]model.EntityState) string {
+	if binding == nil {
+		return ""
+	}
+	state, ok := states[binding.EntityID]
+	if !ok {
+		return "—"
+	}
+	value := state.State
+	if binding.Field != "" && binding.Field != "state" {
+		if attribute, exists := state.Attributes[binding.Field]; exists {
+			value = formatAttribute(attribute)
+		} else {
+			value = "—"
+		}
+	}
+	if binding.Decimals != nil {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			value = strconv.FormatFloat(parsed, 'f', *binding.Decimals, 64)
+		}
+	}
+	return binding.Prefix + value + binding.Suffix
+}
+
+func formatAttribute(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'f', -1, 32)
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func (r *Renderer) drawSwitch(canvas *image.Gray, frame image.Rectangle, element model.Element, states map[string]model.EntityState) {
+	style := element.Style
+	fillColor := parseColor(style.Fill, color.White)
+	strokeColor := parseColor(style.Stroke, parseColor(style.Color, color.Black))
+	fillRounded(canvas, frame, fillColor, maxInt(int(style.Radius), 0))
+	strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), maxInt(int(style.BorderWidth), 1))
+	status := "未绑定"
+	if element.Binding != nil {
+		status = "关"
+		if state, ok := states[element.Binding.EntityID]; ok && isOnState(state.State) {
+			status = "开"
+		}
+	}
+	title := element.Text
+	if strings.TrimSpace(title) == "" {
+		title = "开关"
+	}
+	textStyle := style
+	textStyle.Align = "center"
+	if textStyle.FontSize <= 0 {
+		textStyle.FontSize = 18
+	}
+	r.drawTextBox(canvas, title+"\n"+status, frame, textStyle)
+}
+
+func (r *Renderer) drawClimate(canvas *image.Gray, frame image.Rectangle, element model.Element, states map[string]model.EntityState) {
+	style := element.Style
+	fillColor := parseColor(style.Fill, color.White)
+	strokeColor := parseColor(style.Stroke, parseColor(style.Color, color.Black))
+	fillRounded(canvas, frame, fillColor, maxInt(int(style.Radius), 0))
+	strokeRounded(canvas, frame, strokeColor, maxInt(int(style.Radius), 0), maxInt(int(style.BorderWidth), 1))
+	title := element.Text
+	current, target, mode := "—", "—", "—"
+	if element.Binding != nil {
+		if state, ok := states[element.Binding.EntityID]; ok {
+			title = attributeString(state.Attributes, "friendly_name", title)
+			current = attributeString(state.Attributes, "current_temperature", current)
+			target = attributeString(state.Attributes, "temperature", target)
+			mode = attributeString(state.Attributes, "hvac_mode", state.State)
+		}
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "温控"
+	}
+	textStyle := style
+	textStyle.Align = "center"
+	if textStyle.FontSize <= 0 {
+		textStyle.FontSize = 17
+	}
+	content := fmt.Sprintf("%s\n当前 %s    目标 %s\n模式 %s\n−       调低       调高       +", title, current, target, mode)
+	r.drawTextBox(canvas, content, frame, textStyle)
+}
+
+func attributeString(attributes map[string]any, key, fallback string) string {
+	if value, ok := attributes[key]; ok {
+		return formatAttribute(value)
+	}
+	return fallback
+}
+
+func isOnState(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Renderer) drawNavigation(canvas *image.Gray, navigation Navigation) {
+	barHeight := minInt(NavigationBarHeight, canvas.Bounds().Dy())
+	bar := image.Rect(0, canvas.Bounds().Dy()-barHeight, canvas.Bounds().Dx(), canvas.Bounds().Dy())
+	fillRect(canvas, bar, color.White)
+	drawLine(canvas, image.Rect(bar.Min.X, bar.Min.Y, bar.Max.X, bar.Min.Y+2), color.Black, 2)
+	itemWidth := maxInt(bar.Dx()/3, 1)
+	labels := []string{"‹ 返回", "主页", "设置"}
+	for index, label := range labels {
+		left := bar.Min.X + index*itemWidth
+		right := left + itemWidth
+		if index == 2 {
+			right = bar.Max.X
+		}
+		itemStyle := model.Style{Color: "#111111", FontSize: 16, Align: "center"}
+		if index == 0 && !navigation.CanGoBack {
+			itemStyle.Color = "#999999"
+		}
+		if index == 2 && navigation.IsSettings {
+			itemStyle.FontWeight = "bold"
+		}
+		r.drawTextBox(canvas, label, image.Rect(left, bar.Min.Y+2, right, bar.Max.Y), itemStyle)
 	}
 }
 
@@ -392,9 +552,13 @@ func rectFromFrame(frame model.Frame, bounds image.Rectangle) image.Rectangle {
 }
 
 func fill(canvas *image.Gray, value color.Color) {
+	fillRect(canvas, canvas.Bounds(), value)
+}
+
+func fillRect(canvas *image.Gray, rect image.Rectangle, value color.Color) {
 	gray := color.GrayModel.Convert(value).(color.Gray)
-	for y := canvas.Bounds().Min.Y; y < canvas.Bounds().Max.Y; y++ {
-		for x := canvas.Bounds().Min.X; x < canvas.Bounds().Max.X; x++ {
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
 			canvas.SetGray(x, y, gray)
 		}
 	}

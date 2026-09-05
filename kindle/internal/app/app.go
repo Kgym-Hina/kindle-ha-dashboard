@@ -24,23 +24,35 @@ type App struct {
 	renderer render.Renderer
 	display  ui.Display
 
-	mu             sync.RWMutex
-	portable       *model.Document
-	zoneDocument   *model.Document
-	current        *model.Document
-	currentZone    string
-	pageIndex      int
-	dialog         *render.Dialog
-	dialogDeadline time.Time
+	mu              sync.RWMutex
+	portable        *model.Document
+	zoneDocument    *model.Document
+	current         *model.Document
+	currentZone     string
+	pageIndex       int
+	pageStack       []string
+	settingsVisible bool
+	boundStates     map[string]model.EntityState
+	dialog          *render.Dialog
+	dialogDeadline  time.Time
+
+	hasRendered           bool
+	lastRenderedDocument  *model.Document
+	lastRenderedPage      int
+	lastRenderedDialog    *render.Dialog
+	lastRenderedSettings  bool
+	lastRenderedCanGoBack bool
+	lastRenderedStates    map[string]model.EntityState
 }
 
 func New(cfg config.Config) *App {
 	client := ha.NewClient(cfg.HAURL, cfg.LongLivedToken)
 	return &App{
-		cfg:      cfg,
-		ha:       client,
-		renderer: render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath, FontBoldPath: cfg.FontBoldPath},
-		display:  ui.Display{TempDir: cfg.TempDir, Width: cfg.DisplayWidth, Height: cfg.DisplayHeight},
+		cfg:         cfg,
+		ha:          client,
+		renderer:    render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath, FontBoldPath: cfg.FontBoldPath},
+		display:     ui.Display{TempDir: cfg.TempDir, Width: cfg.DisplayWidth, Height: cfg.DisplayHeight},
+		boundStates: make(map[string]model.EntityState),
 	}
 }
 
@@ -48,7 +60,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err := a.loadInitial(ctx); err != nil {
 		log.Printf("initial dashboard load: %v", err)
 	}
-	if err := a.renderNow(); err != nil {
+	if err := a.renderFrame(false); err != nil {
 		return fmt.Errorf("initial render: %w", err)
 	}
 
@@ -79,8 +91,10 @@ func (a *App) Run(ctx context.Context) error {
 	defer batteryTicker.Stop()
 	dialogTicker := time.NewTicker(500 * time.Millisecond)
 	defer dialogTicker.Stop()
-	resyncTicker := time.NewTicker(60 * time.Second)
+	resyncTicker := time.NewTicker(time.Duration(a.cfg.DashboardRefreshIntervalSec) * time.Second)
 	defer resyncTicker.Stop()
+	forceRefreshTicker := time.NewTicker(time.Duration(a.cfg.ForceRefreshIntervalSec) * time.Second)
+	defer forceRefreshTicker.Stop()
 	if err := a.publishBattery(ctx); err != nil {
 		log.Printf("initial battery report: %v", err)
 	}
@@ -124,9 +138,11 @@ func (a *App) Run(ctx context.Context) error {
 			}
 		case <-resyncTicker.C:
 			a.resync(ctx)
+		case <-forceRefreshTicker.C:
+			a.forceRenderAndLog()
 		case <-dialogTicker.C:
 			if a.clearExpiredDialog() {
-				if err := a.renderNow(); err != nil {
+				if err := a.renderFrame(false); err != nil {
 					log.Printf("render dialog timeout: %v", err)
 				}
 			}
@@ -156,6 +172,9 @@ func (a *App) resync(ctx context.Context) error {
 			refreshErrors = append(refreshErrors, fmt.Sprintf("zone %s: %v", zone, err))
 		}
 	}
+	if err := a.refreshBoundStates(ctx); err != nil {
+		refreshErrors = append(refreshErrors, fmt.Sprintf("bound states: %v", err))
+	}
 	if len(refreshErrors) > 0 {
 		return errors.New(strings.Join(refreshErrors, "; "))
 	}
@@ -178,6 +197,9 @@ func (a *App) loadInitial(ctx context.Context) error {
 	if locationErr == nil && usableZone(locationState.State) {
 		a.switchZone(ctx, locationState.State)
 	}
+	if err := a.refreshBoundStates(ctx); err != nil {
+		log.Printf("initial bound state load: %v", err)
+	}
 	if portableErr != nil && locationErr != nil {
 		return fmt.Errorf("portable: %v; location: %v", portableErr, locationErr)
 	}
@@ -185,6 +207,7 @@ func (a *App) loadInitial(ctx context.Context) error {
 }
 
 func (a *App) handleState(ctx context.Context, state ha.State) {
+	boundChanged := a.updateBoundState(state)
 	switch state.EntityID {
 	case a.cfg.PortableEntity:
 		document, err := model.FromAttributes(state.Attributes)
@@ -200,7 +223,7 @@ func (a *App) handleState(ctx context.Context, state ha.State) {
 			a.pageIndex = 0
 		}
 		a.mu.Unlock()
-		if shouldRender {
+		if shouldRender || boundChanged {
 			a.renderAndLog()
 		}
 	case a.cfg.LocationEntity:
@@ -213,6 +236,8 @@ func (a *App) handleState(ctx context.Context, state ha.State) {
 		a.zoneDocument = nil
 		a.current = a.portable
 		a.pageIndex = 0
+		a.pageStack = nil
+		a.settingsVisible = false
 		a.mu.Unlock()
 		a.renderAndLog()
 	default:
@@ -220,6 +245,9 @@ func (a *App) handleState(ctx context.Context, state ha.State) {
 		currentZone := a.currentZone
 		a.mu.RUnlock()
 		if currentZone == "" || state.EntityID != a.cfg.ZoneEntity(currentZone) {
+			if boundChanged {
+				a.renderAndLog()
+			}
 			return
 		}
 		document, err := model.FromAttributes(state.Attributes)
@@ -257,6 +285,8 @@ func (a *App) switchZone(ctx context.Context, zone string) {
 		a.current = a.portable
 	}
 	a.pageIndex = 0
+	a.pageStack = nil
+	a.settingsVisible = false
 	a.mu.Unlock()
 	if err != nil {
 		log.Printf("zone %s dashboard unavailable, using portable: %v", zone, err)
@@ -296,6 +326,7 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 	}
 	document := a.current
 	pageIndex := a.pageIndex
+	settingsVisible := a.settingsVisible
 	a.mu.Unlock()
 	if document == nil {
 		document = fallbackDocument(a.cfg.DisplayWidth, a.cfg.DisplayHeight)
@@ -307,9 +338,26 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 		y = y * document.Target.Height / a.cfg.DisplayHeight
 	}
 	page := document.Page(pageIndex)
+	if y >= document.Target.Height-render.NavigationBarHeight {
+		return a.handleNavigationTouch(ctx, x, y, document.Target.Width)
+	}
+	if settingsVisible {
+		page = settingsDocument(document.Target.Width, document.Target.Height).Page(0)
+	}
 	for index := len(page.Elements) - 1; index >= 0; index-- {
 		element := page.Elements[index]
-		if !contains(element.Frame, x, y) || element.Action == nil {
+		if !contains(element.Frame, x, y) {
+			continue
+		}
+		if element.Type == "switch" {
+			a.toggleSwitch(ctx, element)
+			return false
+		}
+		if element.Type == "climate" {
+			a.handleClimateTouch(ctx, element, x, y)
+			return false
+		}
+		if element.Action == nil {
 			continue
 		}
 		return a.runAction(ctx, element.Action)
@@ -320,13 +368,7 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 func (a *App) runAction(ctx context.Context, action *model.Action) bool {
 	switch action.Type {
 	case "navigate_page":
-		a.mu.Lock()
-		if a.current != nil {
-			if pageIndex := a.current.PageIndex(action.PageID); pageIndex >= 0 {
-				a.pageIndex = pageIndex
-			}
-		}
-		a.mu.Unlock()
+		a.navigatePage(action.PageID)
 		a.renderAndLog()
 		return false
 	case "call_service":
@@ -348,7 +390,7 @@ func (a *App) runAction(ctx context.Context, action *model.Action) bool {
 		a.renderAndLog()
 		return false
 	case "exit":
-		log.Printf("exit requested from waiting screen")
+		log.Printf("exit requested from settings")
 		return true
 	default:
 		log.Printf("unsupported action type %q", action.Type)
@@ -370,26 +412,78 @@ func (a *App) publishBattery(ctx context.Context) error {
 	})
 }
 
-func (a *App) renderNow() error {
+func (a *App) renderFrame(force bool) error {
 	a.mu.RLock()
 	document := a.current
 	pageIndex := a.pageIndex
-	dialog := a.dialog
+	dialog := cloneDialog(a.dialog)
+	settingsVisible := a.settingsVisible
+	canGoBack := a.canGoBackLocked()
+	states := cloneStateMap(a.boundStates)
 	a.mu.RUnlock()
 	if document == nil {
 		document = fallbackDocument(a.cfg.DisplayWidth, a.cfg.DisplayHeight)
 	}
-	canvas, err := a.renderer.Render(document, pageIndex, dialog)
+	if settingsVisible {
+		document = settingsDocument(a.cfg.DisplayWidth, a.cfg.DisplayHeight)
+		pageIndex = 0
+		states = nil
+	}
+	visibleStates := visibleStateMap(document, pageIndex, states)
+	navigation := render.Navigation{Show: true, CanGoBack: canGoBack, IsSettings: settingsVisible}
+	if !force && a.renderedStateMatches(document, pageIndex, dialog, settingsVisible, canGoBack, visibleStates) {
+		return nil
+	}
+	canvas, err := a.renderer.Render(document, pageIndex, dialog, navigation, visibleStates)
 	if err != nil {
 		return err
 	}
-	return a.display.Show(canvas)
+	if err := a.display.Show(canvas); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.hasRendered = true
+	a.lastRenderedDocument = document
+	a.lastRenderedPage = pageIndex
+	a.lastRenderedDialog = dialog
+	a.lastRenderedSettings = settingsVisible
+	a.lastRenderedCanGoBack = canGoBack
+	a.lastRenderedStates = cloneStateMap(visibleStates)
+	a.mu.Unlock()
+	return nil
 }
 
 func (a *App) renderAndLog() {
-	if err := a.renderNow(); err != nil {
+	if err := a.renderFrame(false); err != nil {
 		log.Printf("render dashboard: %v", err)
 	}
+}
+
+func (a *App) forceRenderAndLog() {
+	if err := a.renderFrame(true); err != nil {
+		log.Printf("forced dashboard refresh: %v", err)
+	}
+}
+
+func (a *App) renderedStateMatches(document *model.Document, pageIndex int, dialog *render.Dialog, settingsVisible, canGoBack bool, states map[string]model.EntityState) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.hasRendered && a.lastRenderedPage == pageIndex && a.lastRenderedSettings == settingsVisible && a.lastRenderedCanGoBack == canGoBack && model.Equal(a.lastRenderedDocument, document) && dialogsEqual(a.lastRenderedDialog, dialog) && stateMapsEqual(a.lastRenderedStates, states)
+}
+
+func cloneDialog(dialog *render.Dialog) *render.Dialog {
+	if dialog == nil {
+		return nil
+	}
+	copy := *dialog
+	return &copy
+}
+
+func dialogsEqual(left, right *render.Dialog) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func (a *App) clearExpiredDialog() bool {
@@ -413,14 +507,6 @@ func usableZone(zone string) bool {
 }
 
 func fallbackDocument(width, height int) *model.Document {
-	margin := 36
-	gap := 18
-	buttonHeight := 76
-	buttonWidth := (width - margin*2 - gap) / 2
-	if buttonWidth < 1 {
-		buttonWidth = 1
-	}
-	buttonY := height/2 + 58
 	return &model.Document{
 		Schema:   model.Schema,
 		Revision: 1,
@@ -432,17 +518,7 @@ func fallbackDocument(width, height int) *model.Document {
 			},
 			{
 				ID: "waiting-hint", Type: "text", Frame: model.Frame{X: 30, Y: float64(height/2 - 24), Width: float64(width - 60), Height: 42},
-				Style: model.Style{Color: "#555555", FontSize: 16, Align: "center"}, Text: "Check connection or refresh configuration",
-			},
-			{
-				ID: "waiting-refresh", Type: "button", Frame: model.Frame{X: float64(margin), Y: float64(buttonY), Width: float64(buttonWidth), Height: float64(buttonHeight)},
-				Style: model.Style{Color: "#ffffff", Fill: "#111111", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 18, Align: "center"}, Text: "Refresh config",
-				Action: &model.Action{Type: "refresh_config"},
-			},
-			{
-				ID: "waiting-exit", Type: "button", Frame: model.Frame{X: float64(margin + buttonWidth + gap), Y: float64(buttonY), Width: float64(buttonWidth), Height: float64(buttonHeight)},
-				Style: model.Style{Color: "#111111", Fill: "#ffffff", Stroke: "#111111", BorderWidth: 2, Radius: 10, FontSize: 18, Align: "center"}, Text: "Exit",
-				Action: &model.Action{Type: "exit"},
+				Style: model.Style{Color: "#555555", FontSize: 16, Align: "center"}, Text: "底部设置菜单可刷新配置或退出",
 			},
 		}}},
 	}

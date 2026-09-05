@@ -27,8 +27,20 @@ export interface DashboardStyle {
   [key: string]: unknown;
 }
 
+export interface DashboardBinding {
+  entity_id: string;
+  field?: string;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+}
+
+export interface ClimateOptions {
+  temperature_step?: number;
+}
+
 export interface DashboardAction {
-  type: "navigate_page" | "call_service" | "show_message";
+  type: "navigate_page" | "call_service" | "show_message" | "refresh_config" | "exit";
   page_id?: string;
   domain?: string;
   service?: string;
@@ -41,11 +53,13 @@ export interface DashboardAction {
 
 export interface DashboardElement {
   id: string;
-  type: "text" | "button" | "image_button" | "image" | "rect" | "line";
+  type: "text" | "button" | "image_button" | "image" | "rect" | "line" | "switch" | "climate";
   frame: DashboardFrame;
   style?: DashboardStyle;
   text?: string;
   image?: { src: string; fit?: "contain" | "cover" | "stretch" };
+  binding?: DashboardBinding;
+  climate?: ClimateOptions;
   action?: DashboardAction;
   [key: string]: unknown;
 }
@@ -53,6 +67,7 @@ export interface DashboardElement {
 export interface DashboardPage {
   id: string;
   name: string;
+  parent_id?: string | null;
   background?: string;
   elements: DashboardElement[];
 }
@@ -84,5 +99,21 @@ export interface EntitySummary {
   state: string;
   name: string;
   domain: string;
+  attribute_names: string[];
 }
 
+export interface ServiceField {
+  name?: string;
+  description?: string;
+  required?: boolean;
+  default?: unknown;
+  selector?: Record<string, unknown>;
+}
+
+export interface ServiceInfo {
+  domain: string;
+  service: string;
+  name?: string;
+  description?: string;
+  fields: Record<string, ServiceField>;
+}

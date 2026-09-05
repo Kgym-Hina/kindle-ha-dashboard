@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -28,6 +30,7 @@ type Target struct {
 type Page struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
+	ParentID   *string   `json:"parent_id,omitempty"`
 	Background string    `json:"background,omitempty"`
 	Elements   []Element `json:"elements"`
 }
@@ -66,14 +69,33 @@ type Action struct {
 	TimeoutMS   int            `json:"timeout_ms,omitempty"`
 }
 
+type Binding struct {
+	EntityID string `json:"entity_id"`
+	Field    string `json:"field,omitempty"`
+	Prefix   string `json:"prefix,omitempty"`
+	Suffix   string `json:"suffix,omitempty"`
+	Decimals *int   `json:"decimals,omitempty"`
+}
+
+type ClimateOptions struct {
+	TemperatureStep float64 `json:"temperature_step,omitempty"`
+}
+
 type Element struct {
-	ID     string  `json:"id"`
-	Type   string  `json:"type"`
-	Frame  Frame   `json:"frame"`
-	Style  Style   `json:"style,omitempty"`
-	Text   string  `json:"text,omitempty"`
-	Image  *Image  `json:"image,omitempty"`
-	Action *Action `json:"action,omitempty"`
+	ID      string          `json:"id"`
+	Type    string          `json:"type"`
+	Frame   Frame           `json:"frame"`
+	Style   Style           `json:"style,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Image   *Image          `json:"image,omitempty"`
+	Binding *Binding        `json:"binding,omitempty"`
+	Climate *ClimateOptions `json:"climate,omitempty"`
+	Action  *Action         `json:"action,omitempty"`
+}
+
+type EntityState struct {
+	State      string         `json:"state"`
+	Attributes map[string]any `json:"attributes"`
 }
 
 type Message struct {
@@ -106,6 +128,33 @@ func FromAttributes(attributes map[string]any) (*Document, error) {
 	return Decode(encoded)
 }
 
+func Equal(left, right *Document) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return reflect.DeepEqual(*left, *right)
+}
+
+func BoundEntityIDs(document *Document) []string {
+	if document == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	for _, page := range document.Pages {
+		for _, element := range page.Elements {
+			if element.Binding != nil && strings.TrimSpace(element.Binding.EntityID) != "" {
+				seen[element.Binding.EntityID] = struct{}{}
+			}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 func (d *Document) Validate() error {
 	if d == nil {
 		return errors.New("document is nil")
@@ -128,10 +177,46 @@ func (d *Document) Validate() error {
 	if len(d.Pages) == 0 {
 		return errors.New("document must contain at least one page")
 	}
+	pageIDs := make(map[string]struct{}, len(d.Pages))
 	for pageIndex, page := range d.Pages {
 		if strings.TrimSpace(page.ID) == "" {
 			return fmt.Errorf("page %d has an empty id", pageIndex)
 		}
+		if _, exists := pageIDs[page.ID]; exists {
+			return fmt.Errorf("page %q is duplicated", page.ID)
+		}
+		pageIDs[page.ID] = struct{}{}
+	}
+	for pageIndex, page := range d.Pages {
+		if page.ParentID != nil {
+			parentID := strings.TrimSpace(*page.ParentID)
+			if parentID == "" {
+				return fmt.Errorf("page %d has an empty parent_id", pageIndex)
+			}
+			if parentID == page.ID {
+				return fmt.Errorf("page %q cannot be its own parent", page.ID)
+			}
+			if _, exists := pageIDs[parentID]; !exists {
+				return fmt.Errorf("page %q references missing parent %q", page.ID, parentID)
+			}
+		}
+	}
+	for _, page := range d.Pages {
+		visited := make(map[string]bool)
+		currentID := page.ID
+		for {
+			if visited[currentID] {
+				return fmt.Errorf("page hierarchy contains a cycle at %q", currentID)
+			}
+			visited[currentID] = true
+			currentIndex := d.PageIndex(currentID)
+			if currentIndex < 0 || d.Pages[currentIndex].ParentID == nil || strings.TrimSpace(*d.Pages[currentIndex].ParentID) == "" {
+				break
+			}
+			currentID = strings.TrimSpace(*d.Pages[currentIndex].ParentID)
+		}
+	}
+	for _, page := range d.Pages {
 		for elementIndex, element := range page.Elements {
 			if strings.TrimSpace(element.ID) == "" {
 				return fmt.Errorf("page %q element %d has an empty id", page.ID, elementIndex)
@@ -144,6 +229,17 @@ func (d *Document) Validate() error {
 			}
 			if (element.Type == "image" || element.Type == "image_button") && (element.Image == nil || strings.TrimSpace(element.Image.Src) == "") {
 				return fmt.Errorf("page %q image element %q is missing image.src", page.ID, element.ID)
+			}
+			if element.Binding != nil {
+				if strings.TrimSpace(element.Binding.EntityID) == "" {
+					return fmt.Errorf("page %q element %q binding requires entity_id", page.ID, element.ID)
+				}
+				if element.Binding.Decimals != nil && (*element.Binding.Decimals < 0 || *element.Binding.Decimals > 6) {
+					return fmt.Errorf("page %q element %q binding.decimals must be between 0 and 6", page.ID, element.ID)
+				}
+			}
+			if element.Climate != nil && element.Climate.TemperatureStep <= 0 {
+				return fmt.Errorf("page %q element %q climate.temperature_step must be positive", page.ID, element.ID)
 			}
 			if err := validateAction(element.Action); err != nil {
 				return fmt.Errorf("page %q element %q action: %w", page.ID, element.ID, err)
@@ -174,7 +270,7 @@ func (d *Document) PageIndex(pageID string) int {
 
 func validElementType(value string) bool {
 	switch value {
-	case "text", "button", "image_button", "image", "rect", "line":
+	case "text", "button", "image_button", "image", "rect", "line", "switch", "climate":
 		return true
 	default:
 		return false

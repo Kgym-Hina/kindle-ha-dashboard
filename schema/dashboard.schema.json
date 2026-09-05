@@ -31,6 +31,7 @@
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string"},
         "background": {"type": "string"},
+        "parent_id": {"type": ["string", "null"]},
         "elements": {"type": "array", "items": {"$ref": "#/$defs/element"}}
       },
       "additionalProperties": false
@@ -80,7 +81,7 @@
       "required": ["id", "type", "frame"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
-        "type": {"enum": ["text", "button", "image_button", "image", "rect", "line"]},
+        "type": {"enum": ["text", "button", "image_button", "image", "rect", "line", "switch", "climate"]},
         "frame": {"$ref": "#/$defs/frame"},
         "style": {"$ref": "#/$defs/style"},
         "text": {"type": "string"},
@@ -91,6 +92,23 @@
             "fit": {"enum": ["contain", "cover", "stretch"]}
           },
           "required": ["src"]
+        },
+        "binding": {
+          "type": "object",
+          "required": ["entity_id"],
+          "properties": {
+            "entity_id": {"type": "string", "minLength": 1},
+            "field": {"type": "string"},
+            "prefix": {"type": "string"},
+            "suffix": {"type": "string"},
+            "decimals": {"type": "integer", "minimum": 0, "maximum": 6}
+          },
+          "additionalProperties": false
+        },
+        "climate": {
+          "type": "object",
+          "properties": {"temperature_step": {"type": "number", "exclusiveMinimum": 0}},
+          "additionalProperties": false
         },
         "action": {"$ref": "#/$defs/action"}
       },

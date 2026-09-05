@@ -1,4 +1,4 @@
-import type { DashboardDocument, DashboardMode, EntitySummary, KindleMessage, RuntimeConfig, ZoneInfo } from "../types";
+import type { DashboardDocument, DashboardMode, EntitySummary, KindleMessage, RuntimeConfig, ServiceInfo, ZoneInfo } from "../types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiEndpoint(path), {
@@ -26,12 +26,17 @@ export async function saveRuntimeConfig(payload: { ha_url: string; ha_token?: st
 
 export async function getZones(): Promise<ZoneInfo[]> {
   const body = await request<{ zones: ZoneInfo[] }>("/api/zones");
-  return body.zones;
+  return body.zones || [];
 }
 
 export async function getEntities(): Promise<EntitySummary[]> {
   const body = await request<{ entities: EntitySummary[] }>("/api/entities");
-  return body.entities;
+  return body.entities || [];
+}
+
+export async function getServices(): Promise<ServiceInfo[]> {
+  const body = await request<{ services: ServiceInfo[] }>("/api/services");
+  return body.services || [];
 }
 
 export async function getDashboard(mode: DashboardMode, zoneId?: string | null): Promise<DashboardDocument | null> {

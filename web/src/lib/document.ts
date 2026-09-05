@@ -5,7 +5,7 @@ export function createDocument(target: DashboardTarget): DashboardDocument {
     schema: "kindle-dashboard/v1",
     revision: 1,
     target,
-    pages: [{ id: "home", name: "Home", background: target.background, elements: [] }]
+    pages: [{ id: "home", name: "Home", parent_id: null, background: target.background, elements: [] }]
   };
 }
 
@@ -18,10 +18,12 @@ export function createElement(type: DashboardElement["type"], index: number): Da
   switch (type) {
     case "text": return { ...shared, type, text: "新文本" };
     case "button": return { ...shared, type, text: "新按钮", style: { ...shared.style, color: "#ffffff" }, action: { type: "show_message", title: "Kindle", message: "按钮已按下", timeout_ms: 6000 } };
-    case "image_button": return { ...shared, type, text: "图片按钮", image: { src: "", fit: "contain" }, style: { ...shared.style, color: "#ffffff" }, action: { type: "show_message", title: "Kindle", message: "图片按钮已按下", timeout_ms: 6000 } };
+    case "image_button": return { ...shared, type, text: "", image: { src: "", fit: "contain" }, style: { ...shared.style, color: "transparent", fill: "transparent", stroke: "transparent", border_width: 0, radius: 0 }, action: { type: "show_message", title: "Kindle", message: "图片按钮已按下", timeout_ms: 6000 } };
     case "image": return { ...shared, type, image: { src: "", fit: "contain" }, frame: { x: 48, y: 72 + index * 18, width: 240, height: 160 } };
     case "rect": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 300, height: 120 }, style: { ...shared.style, fill: "#f0eee8", radius: 16 } };
     case "line": return { ...shared, type };
+    case "switch": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 300, height: 108 }, style: { ...shared.style, fill: "#f0f4ef", stroke: "#79927e", radius: 14, font_size: 18 }, text: "开关" };
+    case "climate": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 480, height: 246 }, style: { ...shared.style, fill: "#f0f4ef", stroke: "#79927e", radius: 16, font_size: 18 }, text: "温控", climate: { temperature_step: 0.5 } };
   }
   return { ...shared, type: "text", text: "新文本" };
 }

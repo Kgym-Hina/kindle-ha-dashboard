@@ -58,6 +58,14 @@ app.get("/api/entities", async (_request, response) => {
   }
 });
 
+app.get("/api/services", async (_request, response) => {
+  try {
+    response.json({ services: await ha.listServices() });
+  } catch (error) {
+    response.status(502).json({ error: errorMessage(error), services: [] });
+  }
+});
+
 app.get("/api/dashboard", async (request, response) => {
   try {
     const mode = parseMode(request.query.mode);

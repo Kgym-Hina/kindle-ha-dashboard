@@ -20,14 +20,27 @@
 }
 ```
 
-每个页面包含 `id`、`name`、`background` 和 `elements`。组件的公共字段为 `id`、`type`、`frame`、`style` 和可选 `action`：
+每个页面包含 `id`、`name`、可选的 `parent_id`、`background` 和 `elements`。`parent_id` 用于组成可从页面跳转进入的子页。组件的公共字段为 `id`、`type`、`frame`、`style` 和可选 `action`：
 
 - `text`：使用 `text` 显示文本。
 - `button`：显示文本按钮，可触摸。
-- `image_button`：显示图片按钮，可触摸。
+- `image_button`：图片本身就是点击区域，不额外绘制文字、填充或边框。
 - `image`：显示 `image.src`，支持 HTTP(S)、本地文件和 data URL。
 - `rect`：矩形/卡片。
 - `line`：线段。
+- `switch`：绑定开关实体，点击后调用 `switch.toggle`。
+- `climate`：绑定温控实体，内置目标温度和 HVAC 模式控制。
+
+文本和按钮可以使用 `binding` 显示实体状态或属性。编辑器会从 Home Assistant 读取实体列表和属性名，并提供“一键插入值”：
+
+```json
+{
+  "text": "室温：{value} ℃",
+  "binding": {"entity_id": "sensor.room_temperature", "field": "state", "decimals": 1}
+}
+```
+
+编辑器画布和 Kindle 渲染器都会保留底部 72 像素作为返回、主页、设置导航栏；导航栏不属于页面元素。
 
 ## 动作
 
@@ -47,6 +60,8 @@
 - `show_message`：`title`、`message` 在 Kindle 上弹出对话框。
 - `refresh_config`：Kindle 内置等待页动作，重新从 Home Assistant 拉取界面配置。
 - `exit`：Kindle 内置等待页动作，退出程序并恢复原生 Kindle 框架。
+
+Kindle 每 10 秒从 Home Assistant 校准一次文档和绑定实体状态。只有实际画面发生变化时才会刷新电子墨水屏；连续 30 分钟没有变化时强制全屏刷新一次。两个间隔都可以在 Kindle `config` 中调整。
 
 图片推荐使用编辑器上传产生的 PNG/JPEG/GIF data URL，或使用 Kindle 可访问的 PNG/JPEG/GIF HTTP(S) 地址。Kindle 只会把认证头发送给与 `ha_url` 同源的图片地址。
 

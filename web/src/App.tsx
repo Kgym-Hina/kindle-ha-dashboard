@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlignmentToolbar, type Alignment } from "./components/AlignmentToolbar";
 import { EditorCanvas } from "./components/EditorCanvas";
 import { InspectorPanel } from "./components/InspectorPanel";
+import { LayerMenu } from "./components/LayerMenu";
 import { MessageComposer } from "./components/MessageComposer";
 import { PageTabs } from "./components/PageTabs";
 import { Palette } from "./components/Palette";
 import { SettingsModal } from "./components/SettingsModal";
 import { TargetBar } from "./components/TargetBar";
 import { TopBar } from "./components/TopBar";
-import { getDashboard, getEntities, getRuntimeConfig, getZones, publishDashboard, saveRuntimeConfig, sendMessage } from "./lib/api";
+import { getDashboard, getEntities, getRuntimeConfig, getServices, getZones, publishDashboard, saveRuntimeConfig, sendMessage } from "./lib/api";
 import { createDocument, createElement, patchElement } from "./lib/document";
-import type { DashboardDocument, DashboardElement, DashboardFrame, DashboardMode, DashboardTarget, EntitySummary, KindleMessage, RuntimeConfig, ZoneInfo } from "./types";
+import type { DashboardDocument, DashboardElement, DashboardFrame, DashboardMode, DashboardTarget, EntitySummary, KindleMessage, RuntimeConfig, ServiceInfo, ZoneInfo } from "./types";
 import { canvasHeight, canvasWidth } from "./types";
 
 const defaultTarget: DashboardTarget = { mode: "portable", zone_id: null, width: canvasWidth, height: canvasHeight, background: "#ffffff" };
@@ -22,26 +24,45 @@ export default function App() {
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [zones, setZones] = useState<ZoneInfo[]>([]);
   const [entities, setEntities] = useState<EntitySummary[]>([]);
+  const [services, setServices] = useState<ServiceInfo[]>([]);
   const [runtime, setRuntime] = useState<RuntimeConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
+  const [layerMenu, setLayerMenu] = useState<{ elementId: string; x: number; y: number } | null>(null);
 
   const page = document.pages[activePage] || document.pages[0]!;
   const selectedElement = useMemo(() => page?.elements.find((element) => element.id === selectedId) || null, [page, selectedId]);
 
   const refreshMeta = useCallback(async () => {
-    const [runtimeResult, zonesResult, entitiesResult] = await Promise.allSettled([getRuntimeConfig(), getZones(), getEntities()]);
+    const [runtimeResult, zonesResult, entitiesResult, servicesResult] = await Promise.allSettled([getRuntimeConfig(), getZones(), getEntities(), getServices()]);
     if (runtimeResult.status === "fulfilled") setRuntime(runtimeResult.value);
     if (zonesResult.status === "fulfilled") setZones(zonesResult.value);
     if (entitiesResult.status === "fulfilled") setEntities(entitiesResult.value);
+    if (servicesResult.status === "fulfilled") setServices(servicesResult.value);
   }, []);
 
   useEffect(() => {
     refreshMeta().catch((reason) => notify(reason));
   }, [refreshMeta]);
+
+  useEffect(() => {
+    if (!layerMenu) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".layer-menu")) return;
+      setLayerMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setLayerMenu(null); };
+    window.document.addEventListener("pointerdown", close);
+    window.document.addEventListener("keydown", escape);
+    return () => {
+      window.document.removeEventListener("pointerdown", close);
+      window.document.removeEventListener("keydown", escape);
+    };
+  }, [layerMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,14 +109,53 @@ export default function App() {
 
   const duplicateElement = () => {
     if (!selectedElement) return;
-    const duplicate: DashboardElement = { ...selectedElement, id: `${selectedElement.type}-${Date.now()}`, frame: { ...selectedElement.frame, x: Math.min(canvasWidth - selectedElement.frame.width, selectedElement.frame.x + 20), y: Math.min(canvasHeight - selectedElement.frame.height, selectedElement.frame.y + 20) } };
+    const contentHeight = canvasHeight - 72;
+    const duplicate: DashboardElement = { ...selectedElement, id: `${selectedElement.type}-${Date.now()}`, frame: { ...selectedElement.frame, x: Math.min(canvasWidth - selectedElement.frame.width, selectedElement.frame.x + 20), y: Math.min(contentHeight - selectedElement.frame.height, selectedElement.frame.y + 20) } };
     updateCurrentPage({ ...page, elements: [...page.elements, duplicate] }); setSelectedId(duplicate.id);
   };
 
-  const addPage = () => {
+  const addPage = (parentIndex: number | null = null) => {
     const index = document.pages.length + 1;
-    const nextPage = { id: `page-${Date.now()}`, name: `Page ${index}`, background: document.target.background, elements: [] };
+    const parentId = parentIndex !== null ? document.pages[parentIndex]?.id || null : null;
+    const nextPage = { id: `page-${Date.now()}`, name: parentId ? `子页 ${index}` : `Page ${index}`, parent_id: parentId, background: document.target.background, elements: [] };
     setDocument((current) => ({ ...current, pages: [...current.pages, nextPage] })); setActivePage(index - 1); setSelectedId(null);
+  };
+
+  const alignElement = (alignment: Alignment) => {
+    if (!selectedElement) return;
+    const contentHeight = canvasHeight - 72;
+    const frame = selectedElement.frame;
+    const nextFrame = { ...frame };
+    if (alignment === "left") nextFrame.x = 0;
+    if (alignment === "center") nextFrame.x = Math.max(0, Math.round((canvasWidth - frame.width) / 2));
+    if (alignment === "right") nextFrame.x = Math.max(0, canvasWidth - frame.width);
+    if (alignment === "top") nextFrame.y = 0;
+    if (alignment === "middle") nextFrame.y = Math.max(0, Math.round((contentHeight - frame.height) / 2));
+    if (alignment === "bottom") nextFrame.y = Math.max(0, contentHeight - frame.height);
+    changeElement({ ...selectedElement, frame: nextFrame });
+  };
+
+  const reorderElement = (direction: "up" | "down" | "front" | "back") => {
+    if (!selectedId) return;
+    setDocument((current) => ({
+      ...current,
+      pages: current.pages.map((candidate, index) => {
+        if (index !== activePage) return candidate;
+        const elements = [...candidate.elements];
+        const currentIndex = elements.findIndex((element) => element.id === selectedId);
+        if (currentIndex < 0) return candidate;
+        let nextIndex = currentIndex;
+        if (direction === "up") nextIndex = Math.min(elements.length - 1, currentIndex + 1);
+        if (direction === "down") nextIndex = Math.max(0, currentIndex - 1);
+        if (direction === "front") nextIndex = elements.length - 1;
+        if (direction === "back") nextIndex = 0;
+        if (nextIndex === currentIndex) return candidate;
+        const [moved] = elements.splice(currentIndex, 1);
+        elements.splice(nextIndex, 0, moved);
+        return { ...candidate, elements };
+      })
+    }));
+    setLayerMenu(null);
   };
 
   const publish = async () => {
@@ -127,19 +187,20 @@ export default function App() {
       <div className="editor-layout">
         <Palette onAdd={addElement} />
         <section className="studio-column">
-          <PageTabs pages={document.pages} activeIndex={activePage} onSelect={(index) => { setActivePage(index); setSelectedId(null); }} onAdd={addPage} />
+          <PageTabs pages={document.pages} activeIndex={activePage} onSelect={(index) => { setActivePage(index); setSelectedId(null); setLayerMenu(null); }} onAddRoot={() => addPage()} onAddChild={(index) => addPage(index)} />
           <div className="canvas-card panel-card">
-            <div className="canvas-card-header"><div><h2>{page?.name || "页面"}</h2></div><div className="canvas-meta"><span>黑白预览</span><span className="meta-divider" /><span>{page?.elements.length || 0} 个组件</span></div></div>
-            <div className="canvas-wrap">{loading ? <div className="canvas-loading">载入界面…</div> : <EditorCanvas page={page} width={canvasWidth} height={canvasHeight} selectedId={selectedId} onSelect={(id) => setSelectedId(id || null)} onMove={moveElement} />}</div>
-            <div className="canvas-card-footer"><span>拖拽组件定位 · 右侧面板微调</span><span>revision {document.revision}</span></div>
+            <div className="canvas-card-header"><div><h2>{page?.name || "页面"}</h2></div><div className="canvas-header-tools"><AlignmentToolbar selected={selectedElement} onAlign={alignElement} /><div className="canvas-meta"><span>黑白预览</span><span className="meta-divider" /><span>{page?.elements.length || 0} 个组件</span></div></div></div>
+            <div className="canvas-wrap">{loading ? <div className="canvas-loading">载入界面…</div> : <EditorCanvas page={page} width={canvasWidth} height={canvasHeight} entities={entities} selectedId={selectedId} onSelect={(id) => { setSelectedId(id || null); setLayerMenu(null); }} onMove={moveElement} onResize={moveElement} onContextMenu={(elementId, x, y) => { setSelectedId(elementId); setLayerMenu({ elementId, x, y }); }} />}</div>
+            <div className="canvas-card-footer"><span>拖拽定位 · 拖动控制点调整尺寸 · 右键管理图层</span><span>revision {document.revision}</span></div>
           </div>
         </section>
-        <InspectorPanel element={selectedElement} pages={document.pages} entities={entities} onChange={changeElement} onDelete={deleteElement} onDuplicate={duplicateElement} />
+        <InspectorPanel element={selectedElement} pages={document.pages} entities={entities} services={services} onChange={changeElement} onDelete={deleteElement} onDuplicate={duplicateElement} />
       </div>
     </main>
     <footer className="status-bar"><span><span className="status-mark" />编辑草稿</span><span>Kindle Dashboard Protocol · v1</span></footer>
     {showSettings ? <SettingsModal runtime={runtime} onClose={() => setShowSettings(false)} onSave={saveSettings} /> : null}
     {showMessage ? <MessageComposer onClose={() => setShowMessage(false)} onSend={sendPushMessage} /> : null}
+    {layerMenu ? <LayerMenu x={layerMenu.x} y={layerMenu.y} onMoveUp={() => reorderElement("up")} onMoveDown={() => reorderElement("down")} onBringToFront={() => reorderElement("front")} onSendToBack={() => reorderElement("back")} /> : null}
     {toast ? <div className="toast" role="status">{toast}</div> : null}
   </div>;
 
