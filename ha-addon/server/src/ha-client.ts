@@ -15,6 +15,12 @@ interface HAArea {
 interface HAEntityRegistryEntry {
   entity_id: string;
   area_id?: string | null;
+  device_id?: string | null;
+}
+
+interface HADeviceRegistryEntry {
+  id: string;
+  area_id?: string | null;
 }
 
 interface HAWebSocketMessage {
@@ -54,18 +60,21 @@ export class HomeAssistantClient {
   }
 
   async listEntities(): Promise<EntitySummary[]> {
-    const [states, registryEntries, areas] = await Promise.all([
+    const [states, registryEntries, deviceEntries, areas] = await Promise.all([
       this.getStates(),
       this.listEntityRegistry().catch(() => []),
+      this.listDeviceRegistry().catch(() => []),
       this.listAreas().catch(() => [])
     ]);
     const registryByEntity = new Map(registryEntries.map((entry) => [entry.entity_id, entry]));
+    const devicesById = new Map(deviceEntries.map((entry) => [entry.id, entry]));
     const areaNames = new Map(areas.map((area) => [area.area_id, area.name]));
     return states
       .filter((state) => !state.entity_id.startsWith("sensor.kindle_dashboard_"))
       .map((state) => {
         const registryEntry = registryByEntity.get(state.entity_id);
-        const areaId = registryEntry?.area_id || null;
+        const deviceAreaId = registryEntry?.device_id ? devicesById.get(registryEntry.device_id)?.area_id : null;
+        const areaId = registryEntry?.area_id || deviceAreaId || null;
         return {
           entity_id: state.entity_id,
           state: state.state,
@@ -138,6 +147,10 @@ export class HomeAssistantClient {
 
   private async listEntityRegistry(): Promise<HAEntityRegistryEntry[]> {
     return this.listWebSocketCollection("config/entity_registry/list", isEntityRegistryEntry, "entity");
+  }
+
+  private async listDeviceRegistry(): Promise<HADeviceRegistryEntry[]> {
+    return this.listWebSocketCollection("config/device_registry/list", isDeviceRegistryEntry, "device");
   }
 
   private async listWebSocketCollection<T>(commandType: string, isItem: (value: unknown) => value is T, label: string): Promise<T[]> {
@@ -254,6 +267,13 @@ function isArea(value: unknown): value is HAArea {
 function isEntityRegistryEntry(value: unknown): value is HAEntityRegistryEntry {
   return isObject(value)
     && typeof value.entity_id === "string"
+    && (value.area_id === undefined || value.area_id === null || typeof value.area_id === "string")
+    && (value.device_id === undefined || value.device_id === null || typeof value.device_id === "string");
+}
+
+function isDeviceRegistryEntry(value: unknown): value is HADeviceRegistryEntry {
+  return isObject(value)
+    && typeof value.id === "string"
     && (value.area_id === undefined || value.area_id === null || typeof value.area_id === "string");
 }
 
