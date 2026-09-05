@@ -13,6 +13,6 @@
   "display_height": 800,
   "battery_interval_seconds": 300,
   "temp_dir": "/var/tmp/kindle-ha-dashboard",
-  "font_path": ""
+  "font_path": "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Regular.otf",
+  "font_bold_path": "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Bold.otf"
 }
-

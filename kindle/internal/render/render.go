@@ -11,13 +11,16 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/model"
 	xdraw "golang.org/x/image/draw"
@@ -34,13 +37,19 @@ type Dialog struct {
 }
 
 type Renderer struct {
-	HTTPClient *http.Client
-	HAURL      string
-	Token      string
-	FontPath   string
+	HTTPClient   *http.Client
+	HAURL        string
+	Token        string
+	FontPath     string
+	FontBoldPath string
+
+	regularFontOnce sync.Once
+	regularFont     *opentype.Font
+	boldFontOnce    sync.Once
+	boldFont        *opentype.Font
 }
 
-func (r Renderer) Render(document *model.Document, pageIndex int, dialog *Dialog) (*image.Gray, error) {
+func (r *Renderer) Render(document *model.Document, pageIndex int, dialog *Dialog) (*image.Gray, error) {
 	if document == nil {
 		return nil, errors.New("cannot render a nil document")
 	}
@@ -57,12 +66,12 @@ func (r Renderer) Render(document *model.Document, pageIndex int, dialog *Dialog
 		}
 	}
 	if dialog != nil {
-		drawDialog(canvas, *dialog, r.face(22))
+		r.drawDialog(canvas, *dialog)
 	}
 	return canvas, nil
 }
 
-func (r Renderer) drawElement(canvas *image.Gray, element model.Element) error {
+func (r *Renderer) drawElement(canvas *image.Gray, element model.Element) error {
 	frame := rectFromFrame(element.Frame, canvas.Bounds())
 	style := element.Style
 	fillColor := parseColor(style.Fill, color.Transparent)
@@ -107,23 +116,22 @@ func (r Renderer) drawElement(canvas *image.Gray, element model.Element) error {
 	return nil
 }
 
-func (r Renderer) drawTextBox(canvas *image.Gray, value string, frame image.Rectangle, style model.Style) {
+func (r *Renderer) drawTextBox(canvas *image.Gray, value string, frame image.Rectangle, style model.Style) {
 	if strings.TrimSpace(value) == "" {
 		return
 	}
-	face := r.face(style.FontSize)
+	fontSize := style.FontSize
+	if fontSize <= 0 {
+		fontSize = 16
+	}
+	face := r.face(fontSize, style.FontWeight == "bold")
 	fontColor := parseColor(style.Color, color.Black)
-	fontSize := fixed.I(13)
-	if style.FontSize > 0 {
-		fontSize = fixed.I(int(style.FontSize))
-	}
-	lineHeight := face.Metrics().Height.Ceil()
-	if lineHeight <= 0 {
-		lineHeight = fontSize.Ceil()
-	}
+	lineHeight := maxInt(int(math.Ceil(fontSize*1.15)), 1)
+	metrics := face.Metrics()
+	leading := maxInt(lineHeight-metrics.Ascent.Ceil()-metrics.Descent.Ceil(), 0)
 	lines := wrapText(value, face, maxInt(frame.Dx()-8, 1))
 	totalHeight := len(lines) * lineHeight
-	y := frame.Min.Y + maxInt((frame.Dy()-totalHeight)/2, 0) + face.Metrics().Ascent.Ceil()
+	y := frame.Min.Y + maxInt((frame.Dy()-totalHeight)/2, 0) + metrics.Ascent.Ceil() + leading/2
 	for _, line := range lines {
 		if y > frame.Max.Y {
 			break
@@ -145,21 +153,47 @@ func (r Renderer) drawTextBox(canvas *image.Gray, value string, frame image.Rect
 	}
 }
 
-func (r Renderer) face(size float64) font.Face {
-	if r.FontPath != "" {
-		if data, err := os.ReadFile(r.FontPath); err == nil {
-			if parsed, err := opentype.Parse(data); err == nil {
-				fontSize := size
-				if fontSize <= 0 {
-					fontSize = 13
-				}
-				if face, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: fontSize, DPI: 72, Hinting: font.HintingFull}); err == nil {
-					return face
-				}
-			}
+func (r *Renderer) face(size float64, bold bool) font.Face {
+	if size <= 0 {
+		size = 16
+	}
+	parsed := r.loadFont(bold)
+	if parsed != nil {
+		if face, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull}); err == nil {
+			return face
 		}
 	}
 	return basicfont.Face7x13
+}
+
+func (r *Renderer) loadFont(bold bool) *opentype.Font {
+	if bold {
+		r.boldFontOnce.Do(func() {
+			r.boldFont = parseFontFile(r.FontBoldPath)
+		})
+		if r.boldFont != nil {
+			return r.boldFont
+		}
+	}
+	r.regularFontOnce.Do(func() {
+		r.regularFont = parseFontFile(r.FontPath)
+	})
+	return r.regularFont
+}
+
+func parseFontFile(path string) *opentype.Font {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	parsed, err := opentype.Parse(data)
+	if err != nil {
+		return nil
+	}
+	return parsed
 }
 
 func (r Renderer) loadImage(source string) (image.Image, error) {
@@ -231,24 +265,61 @@ func decodeImage(reader io.Reader) (image.Image, error) {
 func wrapText(value string, face font.Face, maxWidth int) []string {
 	var lines []string
 	for _, paragraph := range strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n") {
-		words := strings.Fields(paragraph)
-		if len(words) == 0 {
+		if paragraph == "" {
 			lines = append(lines, "")
 			continue
 		}
-		line := words[0]
-		for _, word := range words[1:] {
-			candidate := line + " " + word
+		line := ""
+		for _, token := range textTokens(paragraph) {
+			if line == "" && strings.TrimSpace(token) == "" {
+				continue
+			}
+			candidate := line + token
 			if font.MeasureString(face, candidate).Ceil() <= maxWidth {
 				line = candidate
 				continue
 			}
-			lines = append(lines, line)
-			line = word
+			lines = append(lines, strings.TrimRight(line, " \t"))
+			line = strings.TrimLeft(token, " \t")
 		}
-		lines = append(lines, line)
+		lines = append(lines, strings.TrimRight(line, " \t"))
 	}
 	return lines
+}
+
+func textTokens(value string) []string {
+	var tokens []string
+	var word []rune
+	flushWord := func() {
+		if len(word) > 0 {
+			tokens = append(tokens, string(word))
+			word = nil
+		}
+	}
+	for _, char := range value {
+		switch {
+		case unicode.IsSpace(char):
+			flushWord()
+			tokens = append(tokens, string(char))
+		case isCJKCharacter(char):
+			flushWord()
+			tokens = append(tokens, string(char))
+		default:
+			word = append(word, char)
+		}
+	}
+	flushWord()
+	return tokens
+}
+
+func isCJKCharacter(char rune) bool {
+	return (char >= 0x2e80 && char <= 0x2fff) ||
+		(char >= 0x3000 && char <= 0x30ff) ||
+		(char >= 0x3400 && char <= 0x4dbf) ||
+		(char >= 0x4e00 && char <= 0x9fff) ||
+		(char >= 0xac00 && char <= 0xd7af) ||
+		(char >= 0xf900 && char <= 0xfaff) ||
+		(char >= 0xff00 && char <= 0xffef)
 }
 
 func drawImage(canvas *image.Gray, frame image.Rectangle, source image.Image, fit string) {
@@ -286,26 +357,28 @@ func drawImage(canvas *image.Gray, frame image.Rectangle, source image.Image, fi
 	}
 }
 
-func drawDialog(canvas *image.Gray, dialog Dialog, face font.Face) {
+func (r *Renderer) drawDialog(canvas *image.Gray, dialog Dialog) {
 	bounds := canvas.Bounds()
 	margin := 34
 	box := image.Rect(margin, bounds.Dy()/2-150, bounds.Dx()-margin, bounds.Dy()/2+150)
 	fillRounded(canvas, box, color.White, 14)
 	strokeRounded(canvas, box, color.Black, 14, 3)
-	drawer := &font.Drawer{Dst: canvas, Src: image.NewUniform(color.Black), Face: face}
+	titleFace := r.face(22, true)
+	messageFace := r.face(16, false)
+	drawer := &font.Drawer{Dst: canvas, Src: image.NewUniform(color.Black), Face: titleFace}
 	title := dialog.Title
 	if title == "" {
 		title = "Message"
 	}
 	drawer.Dot = fixed.P(box.Min.X+24, box.Min.Y+48)
 	drawer.DrawString(title)
-	messageFace := basicfont.Face7x13
+	lineHeight := maxInt(int(math.Ceil(16*1.15)), 1)
 	for index, line := range wrapText(dialog.Message, messageFace, box.Dx()-48) {
 		drawer.Face = messageFace
-		drawer.Dot = fixed.P(box.Min.X+24, box.Min.Y+88+index*18)
+		drawer.Dot = fixed.P(box.Min.X+24, box.Min.Y+88+index*lineHeight)
 		drawer.DrawString(line)
 	}
-	drawer.Face = basicfont.Face7x13
+	drawer.Face = messageFace
 	drawer.Dot = fixed.P(box.Max.X-96, box.Max.Y-28)
 	drawer.DrawString("Tap to close")
 }

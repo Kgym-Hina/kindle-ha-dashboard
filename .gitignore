@@ -3,6 +3,7 @@
 .env.*
 node_modules/
 web/dist/
+ha-addon/web/dist/
 ha-addon/server/dist/
 ha-addon/server/public/
 kindle/bin/

@@ -8,5 +8,4 @@ Kindle 端只有 Go 可执行程序，运行在 KUAL 扩展目录中。程序会
 - 订阅 `kindle_dashboard_message` 事件；
 - 定时把 Kindle 电量写入 `sensor.<device_id>_battery`。
 
-安装 `dist/kindle-ha-dashboard.zip` 后，编辑扩展根目录的 `config`，再在 KUAL 中启动。
-
+安装 `dist/kindle-ha-dashboard.zip` 后，编辑扩展根目录的 `config`，再在 KUAL 中启动。安装包内置 Noto Sans CJK SC 字体，支持中文并按 JSON 中的 `font_size` 和 `font_weight` 渲染；如需替换字体，可在 `font_path` 和 `font_bold_path` 中填写 Kindle 上的 TTF/OTF 路径。

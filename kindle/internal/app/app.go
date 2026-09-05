@@ -39,7 +39,7 @@ func New(cfg config.Config) *App {
 	return &App{
 		cfg:      cfg,
 		ha:       client,
-		renderer: render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath},
+		renderer: render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath, FontBoldPath: cfg.FontBoldPath},
 		display:  ui.Display{TempDir: cfg.TempDir, Width: cfg.DisplayWidth, Height: cfg.DisplayHeight},
 	}
 }

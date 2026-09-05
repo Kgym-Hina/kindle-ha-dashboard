@@ -26,7 +26,13 @@ type Config struct {
 	BatteryIntervalSec int    `json:"battery_interval_seconds"`
 	TempDir            string `json:"temp_dir"`
 	FontPath           string `json:"font_path,omitempty"`
+	FontBoldPath       string `json:"font_bold_path,omitempty"`
 }
+
+const (
+	DefaultFontPath     = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Regular.otf"
+	DefaultFontBoldPath = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Bold.otf"
+)
 
 func Defaults() Config {
 	return Config{
@@ -39,6 +45,8 @@ func Defaults() Config {
 		DisplayHeight:      800,
 		BatteryIntervalSec: 300,
 		TempDir:            "/var/tmp/kindle-ha-dashboard",
+		FontPath:           DefaultFontPath,
+		FontBoldPath:       DefaultFontBoldPath,
 	}
 }
 
@@ -79,6 +87,12 @@ func (c *Config) applyDerivedDefaults() {
 	}
 	if c.TempDir == "" {
 		c.TempDir = "/var/tmp/kindle-ha-dashboard"
+	}
+	if c.FontPath == "" {
+		c.FontPath = DefaultFontPath
+	}
+	if c.FontBoldPath == "" {
+		c.FontBoldPath = DefaultFontBoldPath
 	}
 }
 

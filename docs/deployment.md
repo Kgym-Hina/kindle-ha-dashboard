@@ -12,6 +12,8 @@
 
 编辑器 Settings 中的设置会写入 Add-on `/data/settings.json`，token 不会通过 GET API 返回。
 
+Kindle 安装包内置 Noto Sans CJK SC 字体，因此中文不依赖 Kindle 的系统字体。Kindle `config` 中的 `font_path`、`font_bold_path` 分别指向安装包内的常规和粗体字体；`font_size` 使用与编辑器一致的画布像素单位。
+
 ## Kindle 发布包
 
 在具备 Go 工具链的开发机上运行：
@@ -22,4 +24,3 @@ cd kindle
 ```
 
 构建产物为 `kindle/dist/kindle-ha-dashboard.zip`。此过程需要可用的 Go 编译器和 zip 工具，本仓库不提交架构相关的伪二进制。
-
