@@ -25,6 +25,7 @@ type Reader struct {
 	DevicePath string
 	MaxX       int
 	MaxY       int
+	TouchOnly  bool
 }
 
 func (r Reader) Read(ctx context.Context, output chan<- Event) error {
@@ -95,6 +96,9 @@ func (r Reader) Read(ctx context.Context, output chan<- Event) error {
 				}
 			}
 		case evKey:
+			if r.TouchOnly && event.Code != btnTouch {
+				continue
+			}
 			if event.Code == btnTouch {
 				if event.Value != 0 {
 					pendingPress = true

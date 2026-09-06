@@ -98,7 +98,7 @@ func (a *App) Run(ctx context.Context) error {
 	inputCh := make(chan input.Event, 16)
 	inputErrCh := make(chan inputResult, 2)
 	go func() {
-		inputErrCh <- inputResult{source: "touch", err: (input.Reader{DevicePath: a.cfg.InputDevice, MaxX: a.cfg.TouchWidth, MaxY: a.cfg.TouchHeight}).Read(ctx, inputCh)}
+		inputErrCh <- inputResult{source: "touch", err: (input.Reader{DevicePath: a.cfg.InputDevice, MaxX: a.cfg.TouchWidth, MaxY: a.cfg.TouchHeight, TouchOnly: true}).Read(ctx, inputCh)}
 	}()
 	if strings.TrimSpace(a.cfg.KeyDevice) != "" {
 		go func() {
