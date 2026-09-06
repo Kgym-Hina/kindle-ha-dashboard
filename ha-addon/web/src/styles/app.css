@@ -92,14 +92,27 @@ select:focus, input:focus, textarea:focus { border-color: #90aa98; box-shadow: 0
 .switch-preview span { display: block; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(30,38,32,.2); transition: transform .16s; }
 .switch-preview.is-on { background: #26352c; }
 .switch-preview.is-on span { transform: translateX(24px); }
-.element-climate { display: grid; grid-template-rows: auto 1fr auto; align-content: stretch; gap: 8px; padding: 14px 16px; }
-.climate-preview-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
-.climate-preview-heading strong { font-size: 16px; }
-.climate-preview-heading small { padding: 4px 8px; border-radius: 999px; color: #526057; background: #e2e7e1; font-size: 10px; }
-.climate-preview-reading { display: flex; align-items: center; gap: 18px; width: 100%; }
-.climate-preview-reading strong { font-size: 30px; line-height: 1; }
-.climate-preview-reading small { color: #68736b; font-size: 11px; }
-.climate-preview-controls { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; padding-top: 9px; border-top: 1px solid #d8ddd6; color: #526057; font-size: 11px; text-align: center; }
+.element-climate { align-items: stretch; padding: 0; overflow: hidden; }
+.climate-preview-shell { width: 100%; height: 100%; display: grid; grid-template-rows: auto 1fr auto auto; gap: 9px; padding: 14px 16px; box-sizing: border-box; text-align: left; }
+.climate-preview-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.climate-preview-title { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.climate-preview-title strong { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.climate-preview-symbol { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid #c6d2c7; border-radius: 50%; color: #52725b; background: #edf4ed; font-size: 14px; font-weight: 700; }
+.climate-preview-power { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 5px 8px; border: 1px solid #b9c9bb; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.climate-preview-power.is-on { color: #fff; background: #26352c; }
+.climate-preview-power.is-off { color: #526057; background: #eef5ef; }
+.climate-preview-power-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.climate-preview-reading { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 18px; min-width: 0; padding: 5px 0 8px; border-bottom: 1px solid #d8ddd6; }
+.climate-preview-metric { min-width: 0; display: grid; gap: 5px; }
+.climate-preview-metric small { color: #68736b; font-size: 10px; }
+.climate-preview-metric strong { overflow: hidden; color: #1e2b24; font-size: 30px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.climate-preview-metric.is-target strong { color: #526057; font-size: 25px; }
+.climate-preview-temp-controls { display: grid; grid-template-columns: 1fr 72px 1fr; align-items: center; gap: 7px; color: #26352c; text-align: center; }
+.climate-preview-temp-controls > span { display: grid; place-items: center; min-height: 31px; border: 1px solid #b9c9bb; border-radius: 999px; background: #f7faf6; font-size: 21px; line-height: 1; }
+.climate-preview-temp-controls small { color: #68736b; font-size: 10px; }
+.climate-preview-modes { display: grid; gap: 5px; min-width: 0; }
+.climate-preview-modes span { display: grid; place-items: center; min-width: 0; min-height: 27px; overflow: hidden; border: 1px solid #c7d2c8; border-radius: 999px; color: #526057; background: #fffefa; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.climate-preview-modes span.is-active { color: #fff; border-color: #26352c; background: #26352c; }
 .line-visual { width: 100%; display: block; }
 .empty-image { color: #7d847b; font-size: 12px; }
 .resize-handle { position: absolute; z-index: 5; width: 8px; height: 8px; border: 2px solid #fff; border-radius: 50%; background: #6d9677; }

@@ -100,6 +100,10 @@ export interface EntitySummary {
   name: string;
   domain: string;
   attribute_names: string[];
+  current_temperature?: number | string;
+  temperature?: number | string;
+  hvac_mode?: string;
+  hvac_modes?: string[];
   area_id?: string | null;
   area_name?: string | null;
 }

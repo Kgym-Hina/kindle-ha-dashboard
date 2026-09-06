@@ -81,6 +81,10 @@ export class HomeAssistantClient {
           name: stringValue(state.attributes.friendly_name) || state.entity_id,
           domain: state.entity_id.split(".", 1)[0],
           attribute_names: Object.keys(state.attributes).filter((key) => key !== "friendly_name").sort(),
+          current_temperature: scalarValue(state.attributes.current_temperature),
+          temperature: scalarValue(state.attributes.temperature),
+          hvac_mode: stringValue(state.attributes.hvac_mode),
+          hvac_modes: stringArray(state.attributes.hvac_modes),
           area_id: areaId,
           area_name: areaId ? areaNames.get(areaId) || null : null
         };
@@ -254,6 +258,18 @@ function toWebSocketUrl(value: string): string {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function scalarValue(value: unknown): number | string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") return value;
+  return undefined;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+  return items.length > 0 ? items : undefined;
 }
 
 function isObject(value: unknown): value is Record<string, any> {

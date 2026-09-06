@@ -291,57 +291,6 @@ func (r *Renderer) drawSwitch(canvas *image.Gray, frame image.Rectangle, element
 	r.drawTextBox(canvas, status, image.Rect(labelFrame.Min.X, labelFrame.Min.Y+labelHalf, labelFrame.Max.X, labelFrame.Max.Y), model.Style{Color: "#696969", FontSize: 13, Align: "left"})
 }
 
-func (r *Renderer) drawClimate(canvas *image.Gray, frame image.Rectangle, element model.Element, states map[string]model.EntityState) {
-	style := element.Style
-	fillColor := parseColor(style.Fill, color.Gray{Y: 247})
-	strokeColor := parseColor(style.Stroke, color.Gray{Y: 175})
-	radius := maxInt(int(style.Radius), 16)
-	fillRounded(canvas, frame, fillColor, radius)
-	strokeRounded(canvas, frame, strokeColor, radius, maxInt(int(style.BorderWidth), 1))
-	title := element.Text
-	current, target, mode := "—", "—", "—"
-	if element.Binding != nil {
-		if state, ok := states[element.Binding.EntityID]; ok {
-			title = attributeString(state.Attributes, "friendly_name", title)
-			current = attributeString(state.Attributes, "current_temperature", current)
-			target = attributeString(state.Attributes, "temperature", target)
-			mode = attributeString(state.Attributes, "hvac_mode", state.State)
-		}
-	}
-	if strings.TrimSpace(title) == "" {
-		title = "温控"
-	}
-	padding := minInt(18, maxInt(frame.Dx()/12, 8))
-	titleColor := style.Color
-	if strings.TrimSpace(titleColor) == "" {
-		titleColor = "#111111"
-	}
-	titleStyle := model.Style{Color: titleColor, FontSize: 18, FontWeight: "bold", Align: "left"}
-	r.drawTextBox(canvas, title, image.Rect(frame.Min.X+padding, frame.Min.Y+10, frame.Max.X-padding-120, frame.Min.Y+48), titleStyle)
-	modeLabel := climateModeLabel(mode)
-	modeWidth := minInt(112, maxInt(frame.Dx()/4, 76))
-	modeBox := image.Rect(frame.Max.X-padding-modeWidth, frame.Min.Y+12, frame.Max.X-padding, frame.Min.Y+42)
-	fillRounded(canvas, modeBox, color.Gray{Y: 225}, 15)
-	r.drawTextBox(canvas, modeLabel, modeBox, model.Style{Color: "#4b4b4b", FontSize: 13, Align: "center"})
-	readingTop := frame.Min.Y + 58
-	dividerY := frame.Max.Y - 72
-	if dividerY < readingTop+46 {
-		dividerY = frame.Min.Y + (frame.Dy()*2)/3
-	}
-	currentBox := image.Rect(frame.Min.X+padding, readingTop, frame.Min.X+frame.Dx()/2, dividerY-4)
-	targetBox := image.Rect(frame.Min.X+frame.Dx()/2, readingTop+12, frame.Max.X-padding, dividerY-4)
-	r.drawTextBox(canvas, temperatureLabel(current), currentBox, model.Style{Color: "#202020", FontSize: 32, FontWeight: "bold", Align: "left"})
-	r.drawTextBox(canvas, "当前温度", image.Rect(currentBox.Min.X, currentBox.Max.Y-26, currentBox.Max.X, currentBox.Max.Y), model.Style{Color: "#696969", FontSize: 12, Align: "left"})
-	r.drawTextBox(canvas, temperatureLabel(target), targetBox, model.Style{Color: "#3f3f3f", FontSize: 22, FontWeight: "bold", Align: "left"})
-	r.drawTextBox(canvas, "目标温度", image.Rect(targetBox.Min.X, targetBox.Max.Y-26, targetBox.Max.X, targetBox.Max.Y), model.Style{Color: "#696969", FontSize: 12, Align: "left"})
-	drawLine(canvas, image.Rect(frame.Min.X+padding, dividerY, frame.Max.X-padding, dividerY+1), color.Gray{Y: 205}, 1)
-	controlBox := image.Rect(frame.Min.X+padding, dividerY+5, frame.Max.X-padding, frame.Max.Y-5)
-	third := maxInt(controlBox.Dx()/3, 1)
-	r.drawTextBox(canvas, "−  调低", image.Rect(controlBox.Min.X, controlBox.Min.Y, controlBox.Min.X+third, controlBox.Max.Y), model.Style{Color: "#3d3d3d", FontSize: 14, Align: "center"})
-	r.drawTextBox(canvas, "模式", image.Rect(controlBox.Min.X+third, controlBox.Min.Y, controlBox.Min.X+third*2, controlBox.Max.Y), model.Style{Color: "#696969", FontSize: 13, Align: "center"})
-	r.drawTextBox(canvas, "＋  调高", image.Rect(controlBox.Min.X+third*2, controlBox.Min.Y, controlBox.Max.X, controlBox.Max.Y), model.Style{Color: "#3d3d3d", FontSize: 14, Align: "center"})
-}
-
 func climateModeLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "off":

@@ -34,6 +34,7 @@ type App struct {
 	pageStack              []string
 	settingsVisible        bool
 	boundStates            map[string]model.EntityState
+	climateLastModes       map[string]string
 	dialog                 *render.Dialog
 	dialogDeadline         time.Time
 	pressedNavigation      int
@@ -62,6 +63,7 @@ func New(cfg config.Config) *App {
 		renderer:                      render.Renderer{HTTPClient: nil, HAURL: cfg.HAURL, Token: cfg.LongLivedToken, FontPath: cfg.FontPath, FontBoldPath: cfg.FontBoldPath},
 		display:                       ui.Display{TempDir: cfg.TempDir, Width: cfg.DisplayWidth, Height: cfg.DisplayHeight},
 		boundStates:                   make(map[string]model.EntityState),
+		climateLastModes:              make(map[string]string),
 		pressedNavigation:             -1,
 		lastRenderedPressedNavigation: -1,
 	}

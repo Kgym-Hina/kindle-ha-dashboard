@@ -150,29 +150,45 @@ func (a *App) handleClimateTouch(ctx context.Context, element model.Element, x, 
 	if element.Binding == nil || strings.TrimSpace(element.Binding.EntityID) == "" {
 		return
 	}
+	entityID := element.Binding.EntityID
 	frame := element.Frame
-	relativeX := float64(x) - frame.X
-	relativeY := float64(y) - frame.Y
-	if relativeX < 0 || relativeY < 0 || relativeX > frame.Width || relativeY > frame.Height {
+	current, modes := a.climateState(entityID)
+	layout := model.ClimateHitLayout(frame, modes)
+	if !contains(frame, x, y) {
 		return
 	}
-	if relativeY >= frame.Height*0.62 {
-		step := 0.5
-		if element.Climate != nil && element.Climate.TemperatureStep > 0 {
-			step = element.Climate.TemperatureStep
-		}
-		if relativeX < frame.Width/3 {
-			a.adjustClimateTemperature(ctx, element.Binding.EntityID, -step)
-			return
-		}
-		if relativeX > frame.Width*2/3 {
-			a.adjustClimateTemperature(ctx, element.Binding.EntityID, step)
+	if contains(layout.Power, x, y) {
+		go a.toggleClimatePower(ctx, entityID, current, modes)
+		return
+	}
+	step := 0.5
+	if element.Climate != nil && element.Climate.TemperatureStep > 0 {
+		step = element.Climate.TemperatureStep
+	}
+	if contains(layout.Decrease, x, y) {
+		go a.adjustClimateTemperature(ctx, entityID, -step)
+		return
+	}
+	if contains(layout.Increase, x, y) {
+		go a.adjustClimateTemperature(ctx, entityID, step)
+		return
+	}
+	for _, mode := range layout.ModeItems {
+		if contains(mode.Frame, x, y) {
+			go a.setClimateMode(ctx, entityID, mode.Mode)
 			return
 		}
 	}
-	if relativeY < frame.Height*0.42 && relativeX > frame.Width*0.58 {
-		a.cycleClimateMode(ctx, element.Binding.EntityID)
+}
+
+func (a *App) climateState(entityID string) (string, []string) {
+	a.mu.RLock()
+	state, ok := a.boundStates[entityID]
+	a.mu.RUnlock()
+	if !ok {
+		return "", model.ClimateModes(nil)
 	}
+	return model.ClimateCurrentMode(state), model.ClimateModes(state.Attributes)
 }
 
 func (a *App) adjustClimateTemperature(ctx context.Context, entityID string, delta float64) {
@@ -187,39 +203,76 @@ func (a *App) adjustClimateTemperature(ctx context.Context, entityID string, del
 	defer cancel()
 	if err := a.ha.CallService(callCtx, "climate", "set_temperature", map[string]any{"entity_id": entityID, "temperature": target}); err != nil {
 		logServiceError("climate.set_temperature", err)
-	}
-}
-
-func (a *App) cycleClimateMode(ctx context.Context, entityID string) {
-	current := ""
-	modes := []string{"off", "heat", "cool", "auto"}
-	a.mu.RLock()
-	if state, ok := a.boundStates[entityID]; ok {
-		current = strings.ToLower(stateAttributeString(state.Attributes, "hvac_mode", state.State))
-		if values, ok := state.Attributes["hvac_modes"].([]any); ok && len(values) > 0 {
-			modes = modes[:0]
-			for _, value := range values {
-				if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
-					modes = append(modes, text)
-				}
-			}
-		}
-	}
-	a.mu.RUnlock()
-	if len(modes) == 0 {
 		return
 	}
-	next := modes[0]
-	for index, mode := range modes {
-		if strings.EqualFold(mode, current) {
-			next = modes[(index+1)%len(modes)]
-			break
+	a.refreshClimateState(ctx, entityID)
+}
+
+func (a *App) toggleClimatePower(ctx context.Context, entityID, current string, modes []string) {
+	if current != "" && !strings.EqualFold(current, "off") {
+		a.setClimateMode(ctx, entityID, "off")
+		return
+	}
+	mode := a.lastClimateMode(entityID, modes)
+	if mode == "" {
+		return
+	}
+	a.setClimateMode(ctx, entityID, mode)
+}
+
+func (a *App) lastClimateMode(entityID string, modes []string) string {
+	a.mu.RLock()
+	last := a.climateLastModes[entityID]
+	a.mu.RUnlock()
+	if climateModeSupported(last, modes) {
+		return last
+	}
+	for _, preferred := range []string{"auto", "heat", "cool", "dry", "fan_only", "heat_cool"} {
+		if climateModeSupported(preferred, modes) {
+			return preferred
 		}
+	}
+	if len(modes) > 0 {
+		return modes[0]
+	}
+	return ""
+}
+
+func climateModeSupported(mode string, modes []string) bool {
+	for _, candidate := range modes {
+		if strings.EqualFold(mode, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) setClimateMode(ctx context.Context, entityID, mode string) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		return
 	}
 	callCtx, cancel := context.WithTimeout(ctx, serviceTimeout)
 	defer cancel()
-	if err := a.ha.CallService(callCtx, "climate", "set_hvac_mode", map[string]any{"entity_id": entityID, "hvac_mode": next}); err != nil {
+	if err := a.ha.CallService(callCtx, "climate", "set_hvac_mode", map[string]any{"entity_id": entityID, "hvac_mode": mode}); err != nil {
 		logServiceError("climate.set_hvac_mode", err)
+		return
+	}
+	if mode != "off" {
+		a.mu.Lock()
+		a.climateLastModes[entityID] = mode
+		a.mu.Unlock()
+	}
+	a.refreshClimateState(ctx, entityID)
+}
+
+func (a *App) refreshClimateState(ctx context.Context, entityID string) {
+	refreshCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if state, err := a.ha.FetchState(refreshCtx, entityID); err == nil {
+		a.handleState(ctx, *state)
+	} else if !errors.Is(err, context.Canceled) {
+		logServiceError("climate.refresh", err)
 	}
 }
 

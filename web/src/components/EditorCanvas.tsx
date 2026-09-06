@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { ClimatePreview } from "./ClimatePreview";
 import type { DashboardElement, DashboardFrame, DashboardPage, EntitySummary } from "../types";
 
 const navigationHeight = 72;
@@ -136,7 +137,6 @@ function CanvasElement({ element, entities, selected, onSelect, onContextMenu, o
   const entityValue = entity ? entity.state : "未绑定";
   const switchIsOn = Boolean(entity && isOnState(entity.state));
   const switchLabel = entity ? (switchIsOn ? "已开启" : "已关闭") : "未绑定";
-  const climateValue = entity ? formatClimatePreview(entity) : "未绑定";
   return (
     <div
       className={`canvas-element element-${element.type} ${selected ? "is-selected" : ""}`}
@@ -159,7 +159,7 @@ function CanvasElement({ element, entities, selected, onSelect, onContextMenu, o
       {element.type === "text" || element.type === "button" ? <span className="element-text">{element.text}</span> : null}
       {element.type === "switch" ? <span className="switch-preview-copy"><strong>{element.text || "开关"}</strong><small>{switchLabel}</small></span> : null}
       {element.type === "switch" ? <span className={`switch-preview ${switchIsOn ? "is-on" : ""}`} aria-label={entityValue}><span /></span> : null}
-      {element.type === "climate" ? <><span className="climate-preview-heading"><strong>{element.text || "温控"}</strong><small>{entity ? entity.state : "未绑定"}</small></span><span className="climate-preview-reading"><strong>{entity ? entity.state : "—"}</strong><small>{climateValue}</small></span><span className="climate-preview-controls"><span>− 调低</span><span>模式</span><span>＋ 调高</span></span></> : null}
+      {element.type === "climate" ? <ClimatePreview element={element} entity={entity} /> : null}
       {selected ? <ResizeHandles onStartResize={onStartResize} /> : null}
     </div>
   );
@@ -192,11 +192,6 @@ function resizeFrame(frame: DashboardFrame, handle: ResizeHandle, deltaX: number
   right = clamp(right, left + minimumElementSize, canvasWidth);
   bottom = clamp(bottom, top + minimumElementSize, canvasHeight);
   return { x: Math.round(left), y: Math.round(top), width: Math.round(right - left), height: Math.round(bottom - top) };
-}
-
-function formatClimatePreview(entity: EntitySummary): string {
-  const state = entity.state || "—";
-  return `${state} · ${entity.name}`;
 }
 
 function imageObjectFit(fit: "contain" | "cover" | "stretch" | undefined): CSSProperties["objectFit"] {

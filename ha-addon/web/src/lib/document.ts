@@ -23,7 +23,7 @@ export function createElement(type: DashboardElement["type"], index: number): Da
     case "rect": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 300, height: 120 }, style: { ...shared.style, fill: "#f0eee8", radius: 16 } };
     case "line": return { ...shared, type };
     case "switch": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 280, height: 76 }, style: { ...shared.style, fill: "#ffffff", stroke: "#d2d6d0", border_width: 1, radius: 18, font_size: 18, align: "left" }, text: "开关" };
-    case "climate": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 480, height: 230 }, style: { ...shared.style, fill: "#f7f8f5", stroke: "#b7bfba", border_width: 1, radius: 16, font_size: 18, align: "left" }, text: "温控", climate: { temperature_step: 0.5 } };
+    case "climate": return { ...shared, type, frame: { x: 48, y: 72 + index * 18, width: 480, height: 250 }, style: { ...shared.style, fill: "#f7f8f5", stroke: "#b7bfba", border_width: 1, radius: 16, font_size: 18, align: "left" }, text: "温控", climate: { temperature_step: 0.5 } };
   }
   return { ...shared, type: "text", text: "新文本" };
 }
