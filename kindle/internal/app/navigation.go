@@ -114,6 +114,28 @@ func (a *App) openSettings() {
 	a.renderAndLog()
 }
 
+func (a *App) handlePhysicalKey() {
+	a.mu.RLock()
+	onHome := !a.settingsVisible && a.current != nil && isHomePage(a.current, a.pageIndex)
+	a.mu.RUnlock()
+	if onHome {
+		a.openSettings()
+		return
+	}
+	a.goHome()
+}
+
+func isHomePage(document *model.Document, pageIndex int) bool {
+	if document == nil {
+		return false
+	}
+	page := document.Page(pageIndex)
+	if page.ID == "home" {
+		return true
+	}
+	return page.ParentID == nil || strings.TrimSpace(pointerString(page.ParentID)) == ""
+}
+
 func (a *App) canGoBackLocked() bool {
 	if a.settingsVisible || len(a.pageStack) > 0 {
 		return true

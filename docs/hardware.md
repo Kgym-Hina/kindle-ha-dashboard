@@ -2,7 +2,7 @@
 
 ## Kindle
 
-软件默认显示区域为 `600 × 800`，与老项目中的 `599 × 799` 原始触摸坐标保持兼容。实际机器需要用 `evtest` 确认 `/dev/input/event*` 和 ABS X/Y 最大值，再写入 Kindle `config`。
+软件默认显示区域为 `600 × 800`，与老项目中的 `599 × 799` 原始触摸坐标保持兼容。实际机器需要用 `evtest` 确认 `/dev/input/event*` 和 ABS X/Y 最大值，再写入 Kindle `config`。默认 `input_device` 为触摸屏 `/dev/input/event1`，`key_device` 为物理键 `/dev/input/event0`；dashboard 运行时会独占物理键并禁用自动锁屏。
 
 FreeCAD 默认按 Kindle 10 / 2019 基础款（常被称为 KT2 Basic/Kindle Basic 3）的约 `113 × 160 × 8.7 mm` 外形建立腔体；这只是公开规格基准，最终打印前仍要以手上的 KT2 实物为准。
 

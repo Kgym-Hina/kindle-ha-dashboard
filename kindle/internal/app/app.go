@@ -49,6 +49,11 @@ type App struct {
 	lastRenderedStates            map[string]model.EntityState
 }
 
+type inputResult struct {
+	source string
+	err    error
+}
+
 func New(cfg config.Config) *App {
 	client := ha.NewClient(cfg.HAURL, cfg.LongLivedToken)
 	return &App{
@@ -90,11 +95,16 @@ func (a *App) Run(ctx context.Context) error {
 		})
 	}()
 
-	touchCh := make(chan input.TouchEvent, 8)
-	touchErrCh := make(chan error, 1)
+	inputCh := make(chan input.Event, 16)
+	inputErrCh := make(chan inputResult, 2)
 	go func() {
-		touchErrCh <- (input.Reader{DevicePath: a.cfg.InputDevice, MaxX: a.cfg.TouchWidth, MaxY: a.cfg.TouchHeight}).Read(ctx, touchCh)
+		inputErrCh <- inputResult{source: "touch", err: (input.Reader{DevicePath: a.cfg.InputDevice, MaxX: a.cfg.TouchWidth, MaxY: a.cfg.TouchHeight}).Read(ctx, inputCh)}
 	}()
+	if strings.TrimSpace(a.cfg.KeyDevice) != "" {
+		go func() {
+			inputErrCh <- inputResult{source: "physical key", err: (input.Reader{DevicePath: a.cfg.KeyDevice}).Read(ctx, inputCh)}
+		}()
+	}
 
 	batteryTicker := time.NewTicker(time.Duration(a.cfg.BatteryIntervalSec) * time.Second)
 	defer batteryTicker.Stop()
@@ -108,7 +118,8 @@ func (a *App) Run(ctx context.Context) error {
 		log.Printf("initial battery report: %v", err)
 	}
 
-	var press *input.TouchEvent
+	var press *input.Event
+	physicalKeyPressed := false
 	navigationPress := false
 	for {
 		select {
@@ -119,16 +130,30 @@ func (a *App) Run(ctx context.Context) error {
 				log.Printf("home assistant websocket: %v", err)
 			}
 			clientErrCh = nil
-		case err := <-touchErrCh:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				return fmt.Errorf("touch reader: %w", err)
+		case result := <-inputErrCh:
+			if result.err != nil && !errors.Is(result.err, context.Canceled) {
+				if result.source == "touch" {
+					return fmt.Errorf("touch reader: %w", result.err)
+				}
+				log.Printf("%s reader: %v", result.source, result.err)
 			}
-			return nil
 		case state := <-stateCh:
 			a.handleState(ctx, state)
 		case message := <-messageCh:
 			a.handleMessage(message)
-		case event := <-touchCh:
+		case event := <-inputCh:
+			if event.KeyPressed || event.KeyReleased {
+				if event.KeyPressed {
+					physicalKeyPressed = true
+				}
+				if event.KeyReleased {
+					if physicalKeyPressed {
+						a.handlePhysicalKey()
+					}
+					physicalKeyPressed = false
+				}
+				continue
+			}
 			if event.Pressed {
 				copyEvent := event
 				press = &copyEvent

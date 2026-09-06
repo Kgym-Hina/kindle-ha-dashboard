@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/app"
 	"github.com/kgym-hina/kindle-ha-dashboard/kindle/internal/config"
@@ -25,6 +26,7 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	go keepScreenAwake(ctx)
 	if err := app.New(cfg).Run(ctx); err != nil {
 		log.Fatal(err)
 	}
@@ -45,6 +47,21 @@ func restoreFramework() {
 	}
 	if err := command("start", "framework"); err != nil {
 		log.Printf("start framework: %v", err)
+	}
+}
+
+func keepScreenAwake(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := command("/usr/bin/lipc-set-prop", "com.lab126.powerd", "preventScreenSaver", "1"); err != nil {
+				log.Printf("keep screen awake: %v", err)
+			}
+		}
 	}
 }
 

@@ -9,12 +9,17 @@ import (
 	"syscall"
 )
 
-type TouchEvent struct {
-	X        int
-	Y        int
-	Pressed  bool
-	Released bool
+type Event struct {
+	X           int
+	Y           int
+	Pressed     bool
+	Released    bool
+	KeyCode     uint16
+	KeyPressed  bool
+	KeyReleased bool
 }
+
+type TouchEvent = Event
 
 type Reader struct {
 	DevicePath string
@@ -22,7 +27,7 @@ type Reader struct {
 	MaxY       int
 }
 
-func (r Reader) Read(ctx context.Context, output chan<- TouchEvent) error {
+func (r Reader) Read(ctx context.Context, output chan<- Event) error {
 	file, err := os.Open(r.DevicePath)
 	if err != nil {
 		return err
@@ -96,13 +101,21 @@ func (r Reader) Read(ctx context.Context, output chan<- TouchEvent) error {
 				} else {
 					pendingRelease = true
 				}
+			} else if event.Value == 1 {
+				if err := send(ctx, output, Event{KeyCode: event.Code, KeyPressed: true}); err != nil {
+					return err
+				}
+			} else if event.Value == 0 {
+				if err := send(ctx, output, Event{KeyCode: event.Code, KeyReleased: true}); err != nil {
+					return err
+				}
 			}
 		case evSyn:
 			if event.Code != synReport {
 				continue
 			}
 			if pendingPress && (haveX || haveY) {
-				if err := send(ctx, output, TouchEvent{X: x, Y: y, Pressed: true}); err != nil {
+				if err := send(ctx, output, Event{X: x, Y: y, Pressed: true}); err != nil {
 					return err
 				}
 				pendingPress = false
@@ -111,7 +124,7 @@ func (r Reader) Read(ctx context.Context, output chan<- TouchEvent) error {
 				pendingRelease = false
 			}
 			if pendingRelease {
-				if err := send(ctx, output, TouchEvent{X: x, Y: y, Released: true}); err != nil {
+				if err := send(ctx, output, Event{X: x, Y: y, Released: true}); err != nil {
 					return err
 				}
 				pendingRelease, pendingPress = false, false
@@ -121,7 +134,7 @@ func (r Reader) Read(ctx context.Context, output chan<- TouchEvent) error {
 	}
 }
 
-func send(ctx context.Context, output chan<- TouchEvent, event TouchEvent) error {
+func send(ctx context.Context, output chan<- Event, event Event) error {
 	select {
 	case output <- event:
 		return nil

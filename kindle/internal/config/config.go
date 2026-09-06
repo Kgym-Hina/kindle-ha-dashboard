@@ -19,6 +19,7 @@ type Config struct {
 	LocationEntity              string `json:"location_entity,omitempty"`
 	BatteryEntity               string `json:"battery_entity,omitempty"`
 	InputDevice                 string `json:"input_device"`
+	KeyDevice                   string `json:"key_device"`
 	TouchWidth                  int    `json:"touch_width"`
 	TouchHeight                 int    `json:"touch_height"`
 	DisplayWidth                int    `json:"display_width"`
@@ -32,7 +33,7 @@ type Config struct {
 }
 
 const (
-	Version             = "0.1.5"
+	Version             = "0.1.6"
 	DefaultFontPath     = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Regular.otf"
 	DefaultFontBoldPath = "/mnt/us/extensions/kindle-ha-dashboard/fonts/NotoSansCJKsc-Bold.otf"
 )
@@ -42,6 +43,7 @@ func Defaults() Config {
 		HAURL:                       "http://homeassistant.local:8123",
 		DeviceID:                    "kindle-01",
 		InputDevice:                 "/dev/input/event1",
+		KeyDevice:                   "/dev/input/event0",
 		TouchWidth:                  599,
 		TouchHeight:                 799,
 		DisplayWidth:                600,

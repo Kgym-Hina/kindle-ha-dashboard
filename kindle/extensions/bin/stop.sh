@@ -19,5 +19,6 @@ if [ -f "$PIDFILE" ]; then
   done
   rm -f "$PIDFILE"
 fi
+/usr/bin/lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null || true
+/sbin/start framework 2>/dev/null || true
 echo "Kindle HA Dashboard stopped"
-
