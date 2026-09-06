@@ -120,7 +120,6 @@ func (a *App) Run(ctx context.Context) error {
 
 	var press *input.Event
 	physicalKeyPressed := false
-	navigationPress := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -157,17 +156,16 @@ func (a *App) Run(ctx context.Context) error {
 			if event.Pressed {
 				copyEvent := event
 				press = &copyEvent
-				navigationPress = a.handleTouchPress(ctx, event.X, event.Y)
+				a.handleTouchPress(event.X, event.Y)
 				continue
 			}
 			if event.Released {
-				if press != nil && !navigationPress {
+				if press != nil {
 					if a.handleTouch(ctx, press.X, press.Y) {
 						return nil
 					}
 				}
 				press = nil
-				navigationPress = false
 			}
 		case <-batteryTicker.C:
 			if err := a.publishBattery(ctx); err != nil {
@@ -346,21 +344,30 @@ func (a *App) handleMessage(message ha.Message) {
 	a.renderAndLog()
 }
 
-func (a *App) handleTouchPress(ctx context.Context, x, y int) bool {
+func (a *App) handleTouchPress(x, y int) {
 	x, y = a.normalizeTouch(x, y)
 	a.mu.RLock()
 	if a.dialog != nil {
 		a.mu.RUnlock()
-		return false
+		return
 	}
 	document := a.current
+	pageIndex := a.pageIndex
+	settingsVisible := a.settingsVisible
 	a.mu.RUnlock()
 	if document == nil {
 		document = fallbackDocument(a.cfg.DisplayWidth, a.cfg.DisplayHeight)
 	}
 	x, y = scaleTouchToDocument(x, y, document, a.cfg.DisplayWidth, a.cfg.DisplayHeight)
+	page := document.Page(pageIndex)
+	if settingsVisible {
+		page = settingsDocument(document.Target.Width, document.Target.Height).Page(0)
+	}
+	if pageContains(page, x, y) {
+		return
+	}
 	if y < document.Target.Height-render.NavigationBarHeight {
-		return false
+		return
 	}
 	index := navigationIndex(x, document.Target.Width)
 	a.mu.Lock()
@@ -368,7 +375,6 @@ func (a *App) handleTouchPress(ctx context.Context, x, y int) bool {
 	a.pressedNavigationToken++
 	token := a.pressedNavigationToken
 	a.mu.Unlock()
-	a.handleNavigationTouch(ctx, x, y, document.Target.Width)
 	time.AfterFunc(220*time.Millisecond, func() {
 		a.mu.Lock()
 		if a.pressedNavigationToken != token {
@@ -379,7 +385,6 @@ func (a *App) handleTouchPress(ctx context.Context, x, y int) bool {
 		a.mu.Unlock()
 		a.renderAndLog()
 	})
-	return true
 }
 
 func (a *App) handleTouch(ctx context.Context, x, y int) bool {
@@ -401,9 +406,6 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 	}
 	x, y = scaleTouchToDocument(x, y, document, a.cfg.DisplayWidth, a.cfg.DisplayHeight)
 	page := document.Page(pageIndex)
-	if y >= document.Target.Height-render.NavigationBarHeight {
-		return a.handleNavigationTouch(ctx, x, y, document.Target.Width)
-	}
 	if settingsVisible {
 		page = settingsDocument(document.Target.Width, document.Target.Height).Page(0)
 	}
@@ -424,6 +426,12 @@ func (a *App) handleTouch(ctx context.Context, x, y int) bool {
 			continue
 		}
 		return a.runAction(ctx, element.Action)
+	}
+	if pageContains(page, x, y) {
+		return false
+	}
+	if y >= document.Target.Height-render.NavigationBarHeight {
+		return a.handleNavigationTouch(ctx, x, y, document.Target.Width)
 	}
 	return false
 }
@@ -585,6 +593,15 @@ func (a *App) clearExpiredDialog() bool {
 
 func contains(frame model.Frame, x, y int) bool {
 	return float64(x) >= frame.X && float64(x) <= frame.X+frame.Width && float64(y) >= frame.Y && float64(y) <= frame.Y+frame.Height
+}
+
+func pageContains(page model.Page, x, y int) bool {
+	for index := len(page.Elements) - 1; index >= 0; index-- {
+		if contains(page.Elements[index].Frame, x, y) {
+			return true
+		}
+	}
+	return false
 }
 
 func usableZone(zone string) bool {
